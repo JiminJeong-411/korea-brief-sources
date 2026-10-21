@@ -1,0 +1,6 @@
+# Optional local development ONLY; platform mock sign-in uses this sample account.
+KB_ADMIN_EMAIL=seedy@sites.test
+GOOGLE_API_KEY=
+DEEPSEEK_API_KEY=
+SUPABASE_URL=
+SUPABASE_KEY=

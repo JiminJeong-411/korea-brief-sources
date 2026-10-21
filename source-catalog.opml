@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0"><head><title>Korea Brief default sources</title></head><body>
+<outline text="Yonhap · 政治" title="Yonhap · 政治" type="rss" xmlUrl="https://www.yna.co.kr/rss/politics.xml" htmlUrl="https://www.yna.co.kr"/>
+<outline text="Maeil Business" title="Maeil Business" type="rss" xmlUrl="https://www.mk.co.kr/rss/30000001/" htmlUrl="https://www.mk.co.kr"/>
+<outline text="韩国经济日报 · 经济" title="韩国经济日报 · 经济" type="rss" xmlUrl="https://www.hankyung.com/feed/economy" htmlUrl="https://www.hankyung.com"/>
+<outline text="Platum" title="Platum" type="rss" xmlUrl="https://platum.kr/feed" htmlUrl="https://platum.kr"/>
+<outline text="Electronic Times" title="Electronic Times" type="rss" xmlUrl="https://rss.etnews.com/Section901.xml" htmlUrl="https://rss.etnews.com"/>
+<outline text="CNBC Business" title="CNBC Business" type="rss" xmlUrl="https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&amp;id=10001147" htmlUrl="https://search.cnbc.com"/>
+<outline text="Financial Times (UK)" title="Financial Times (UK)" type="rss" xmlUrl="https://www.ft.com/rss/home/uk" htmlUrl="https://www.ft.com"/>
+<outline text="TechCrunch" title="TechCrunch" type="rss" xmlUrl="https://techcrunch.com/feed/" htmlUrl="https://techcrunch.com"/>
+<outline text="The Verge" title="The Verge" type="rss" xmlUrl="https://www.theverge.com/rss/index.xml" htmlUrl="https://www.theverge.com"/>
+<outline text="CBS Sports" title="CBS Sports" type="rss" xmlUrl="https://www.cbssports.com/rss/headlines/" htmlUrl="https://www.cbssports.com"/>
+<outline text="Variety" title="Variety" type="rss" xmlUrl="https://variety.com/feed/" htmlUrl="https://variety.com"/>
+<outline text="Billboard" title="Billboard" type="rss" xmlUrl="https://www.billboard.com/feed/" htmlUrl="https://www.billboard.com"/>
+<outline text="CNA 新加坡" title="CNA 新加坡" type="rss" xmlUrl="https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml" htmlUrl="https://www.channelnewsasia.com/"/>
+<outline text="ANTARA 印尼通讯社" title="ANTARA 印尼通讯社" type="rss" xmlUrl="https://en.antaranews.com/rss/news.xml" htmlUrl="https://en.antaranews.com/"/>
+<outline text="DW 德国之声" title="DW 德国之声" type="rss" xmlUrl="https://rss.dw.com/rdf/rss-en-all" htmlUrl="https://www.dw.com/"/>
+<outline text="France 24" title="France 24" type="rss" xmlUrl="https://www.france24.com/en/rss" htmlUrl="https://www.france24.com/"/>
+<outline text="NPR 美国" title="NPR 美国" type="rss" xmlUrl="https://feeds.npr.org/1001/rss.xml" htmlUrl="https://www.npr.org/"/>
+<outline text="Agência Brasil 巴西通讯社" title="Agência Brasil 巴西通讯社" type="rss" xmlUrl="https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml" htmlUrl="https://agenciabrasil.ebc.com.br/"/>
+<outline text="MercoPress 南大西洋新闻" title="MercoPress 南大西洋新闻" type="rss" xmlUrl="https://en.mercopress.com/rss" htmlUrl="https://en.mercopress.com/"/>
+<outline text="Africanews" title="Africanews" type="rss" xmlUrl="https://www.africanews.com/feed/rss" htmlUrl="https://www.africanews.com/"/>
+<outline text="AllAfrica 非洲新闻汇集" title="AllAfrica 非洲新闻汇集" type="rss" xmlUrl="https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf" htmlUrl="https://allafrica.com/"/>
+<outline text="RNZ 新西兰" title="RNZ 新西兰" type="rss" xmlUrl="https://www.rnz.co.nz/rss/national.xml" htmlUrl="https://www.rnz.co.nz/"/>
+<outline text="Al Jazeera 半岛电视台" title="Al Jazeera 半岛电视台" type="rss" xmlUrl="https://www.aljazeera.com/xml/rss/all.xml" htmlUrl="https://www.aljazeera.com/"/>
+<outline text="Arab News 沙特" title="Arab News 沙特" type="rss" xmlUrl="https://www.arabnews.com/rss.xml" htmlUrl="https://www.arabnews.com/"/>
+<outline text="BBC 全球新闻" title="BBC 全球新闻" type="rss" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml" htmlUrl="https://www.bbc.com/news"/>
+<outline text="The Korea Herald · 商业" title="The Korea Herald · 商业" type="rss" xmlUrl="https://www.koreaherald.com/rss/kh_Business" htmlUrl="https://www.koreaherald.com"/>
+<outline text="The Korea Herald · K-pop" title="The Korea Herald · K-pop" type="rss" xmlUrl="https://www.koreaherald.com/rss/kh_Kpop" htmlUrl="https://www.koreaherald.com"/>
+<outline text="The Korea Times · 综合" title="The Korea Times · 综合" type="rss" xmlUrl="https://feed.koreatimes.co.kr/k/allnews.xml" htmlUrl="https://feed.koreatimes.co.kr"/>
+<outline text="VnExpress International · 商业" title="VnExpress International · 商业" type="rss" xmlUrl="https://e.vnexpress.net/rss/business.rss" htmlUrl="https://e.vnexpress.net"/>
+<outline text="Vietnam News · 经济" title="Vietnam News · 经济" type="rss" xmlUrl="https://vietnamnews.vn/rss/economy.rss" htmlUrl="https://vietnamnews.vn"/>
+<outline text="Philippine Daily Inquirer · 商业" title="Philippine Daily Inquirer · 商业" type="rss" xmlUrl="https://business.inquirer.net/feed" htmlUrl="https://business.inquirer.net"/>
+<outline text="Bangkok Post · 商业" title="Bangkok Post · 商业" type="rss" xmlUrl="https://www.bangkokpost.com/rss/data/business.xml" htmlUrl="https://www.bangkokpost.com"/>
+<outline text="The Business Times · 新加坡" title="The Business Times · 新加坡" type="rss" xmlUrl="https://www.businesstimes.com.sg/rss/top-stories" htmlUrl="https://www.businesstimes.com.sg"/>
+<outline text="The Guardian · 商业" title="The Guardian · 商业" type="rss" xmlUrl="https://www.theguardian.com/business/rss" htmlUrl="https://www.theguardian.com"/>
+<outline text="欧洲央行 · 公告" title="欧洲央行 · 公告" type="rss" xmlUrl="https://www.ecb.europa.eu/rss/press.html" htmlUrl="https://www.ecb.europa.eu"/>
+<outline text="欧盟理事会 · 新闻公告" title="欧盟理事会 · 新闻公告" type="rss" xmlUrl="https://www.consilium.europa.eu/en/rss/pressreleases.ashx" htmlUrl="https://www.consilium.europa.eu"/>
+<outline text="美联储 · 新闻公告" title="美联储 · 新闻公告" type="rss" xmlUrl="https://www.federalreserve.gov/feeds/press_all.xml" htmlUrl="https://www.federalreserve.gov"/>
+<outline text="美国FTC · 新闻公告" title="美国FTC · 新闻公告" type="rss" xmlUrl="https://www.ftc.gov/feeds/press-release.xml" htmlUrl="https://www.ftc.gov"/>
+<outline text="Folha de S.Paulo · 市场" title="Folha de S.Paulo · 市场" type="rss" xmlUrl="https://feeds.folha.uol.com.br/mercado/rss091.xml" htmlUrl="https://feeds.folha.uol.com.br"/>
+<outline text="Buenos Aires Herald" title="Buenos Aires Herald" type="rss" xmlUrl="https://buenosairesherald.com/feed" htmlUrl="https://buenosairesherald.com"/>
+<outline text="Daily Maverick" title="Daily Maverick" type="rss" xmlUrl="https://www.dailymaverick.co.za/dmrss/" htmlUrl="https://www.dailymaverick.co.za"/>
+<outline text="RNZ · 商业" title="RNZ · 商业" type="rss" xmlUrl="https://www.rnz.co.nz/rss/business.xml" htmlUrl="https://www.rnz.co.nz"/>
+<outline text="The Guardian · 澳大利亚" title="The Guardian · 澳大利亚" type="rss" xmlUrl="https://www.theguardian.com/australia-news/rss" htmlUrl="https://www.theguardian.com"/>
+<outline text="The National" title="The National" type="rss" xmlUrl="https://www.thenationalnews.com/arc/outboundfeeds/rss/?outputType=xml" htmlUrl="https://www.thenationalnews.com"/>
+<outline text="Music Business Worldwide" title="Music Business Worldwide" type="rss" xmlUrl="https://www.musicbusinessworldwide.com/feed/" htmlUrl="https://www.musicbusinessworldwide.com"/>
+<outline text="Digital Music News" title="Digital Music News" type="rss" xmlUrl="https://www.digitalmusicnews.com/feed/" htmlUrl="https://www.digitalmusicnews.com"/>
+<outline text="Music Ally" title="Music Ally" type="rss" xmlUrl="https://musically.com/feed/" htmlUrl="https://musically.com"/>
+<outline text="GamesIndustry.biz" title="GamesIndustry.biz" type="rss" xmlUrl="https://www.gamesindustry.biz/feed" htmlUrl="https://www.gamesindustry.biz"/>
+<outline text="Samsung Newsroom · 全球" title="Samsung Newsroom · 全球" type="rss" xmlUrl="https://news.samsung.com/global/feed" htmlUrl="https://news.samsung.com"/>
+<outline text="SK hynix Newsroom" title="SK hynix Newsroom" type="rss" xmlUrl="https://news.skhynix.com/feed/" htmlUrl="https://news.skhynix.com"/>
+<outline text="WTO · 新闻" title="WTO · 新闻" type="rss" xmlUrl="https://www.wto.org/library/rss/latest_news_e.xml" htmlUrl="https://www.wto.org"/>
+<outline text="BIS · 新闻公告" title="BIS · 新闻公告" type="rss" xmlUrl="https://www.bis.org/doclist/all_pressrels.rss" htmlUrl="https://www.bis.org"/>
+<outline text="The Mainichi · 日本英文新闻" title="The Mainichi · 日本英文新闻" type="rss" xmlUrl="https://mainichi.jp/rss/etc/english_latest.rss" htmlUrl="https://mainichi.jp"/>
+<outline text="Nippon.com · 日本" title="Nippon.com · 日本" type="rss" xmlUrl="https://www.nippon.com/en/feed/" htmlUrl="https://www.nippon.com"/>
+<outline text="Hong Kong Free Press" title="Hong Kong Free Press" type="rss" xmlUrl="https://hongkongfp.com/feed/" htmlUrl="https://hongkongfp.com"/>
+</body></opml>
