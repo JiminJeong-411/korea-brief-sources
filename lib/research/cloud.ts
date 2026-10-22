@@ -1,5 +1,7 @@
 import {DEFAULT_FOCUS} from './strategy-domain.mjs';
-import {env} from 'cloudflare:workers';
+//import {env} from 'cloudflare:workers';
+// 替换原有的 cloudflare 导入，使用 Vercel/Node 的标准环境变量
+const env = process.env;
 import {getChatGPTUser} from '@/app/chatgpt-auth';
 import {canAdmin,TOPICS,publicProjection} from './domain.mjs';
 export type RecordRow={id:string;type:string;state:string;title:string;topic:string;published_at:string|null;created_at:string;updated_at:string;data:any};
