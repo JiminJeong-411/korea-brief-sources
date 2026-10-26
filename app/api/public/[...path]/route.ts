@@ -121,15 +121,19 @@ export async function GET(request: Request) {
 
     if (!supabaseUrl || !anonKey) return Response.json(safeFallback);
 
-    const tableName = "english_hot_news";
+    const tableName = "news";
     const fetchUrl = `${supabaseUrl}/rest/v1/${tableName}?select=*&order=id.desc&limit=500`;
     
     const res = await fetch(fetchUrl, {
       headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, "Content-Type": "application/json" },
+      cache: 'no-store',
       signal: AbortSignal.timeout(10000) 
     });
 
-    if (!res.ok) return Response.json(safeFallback);
+    if (!res.ok) {
+      console.error('Public news read failed:', res.status);
+      return Response.json({...safeFallback, success: false, error: 'NEWS_READ_FAILED'}, {status: 502, headers: {'Cache-Control': 'no-store'}});
+    }
 
     const rawRecords = await res.json();
     if (!Array.isArray(rawRecords)) return Response.json(safeFallback);
@@ -139,18 +143,18 @@ export async function GET(request: Request) {
     const seenUrls = new Set<string>();
     const seenTitles = new Map<string, number[]>();
     for (const r of rawRecords) {
-      const title = plainText(r.translated_title || r.raw_title);
+      const title = plainText(r.title);
       const articleUrl = cleanArticleUrl(r.raw_url);
       if (!title || !articleUrl) continue;
       const summary = plainText(r.ai_summary);
-      const evidenceText = plainText(r.content || r.original_excerpt || r.ai_summary);
-      const category = classifyCategory(plainText(r.raw_title) + ' ' + title, evidenceText, r.assigned_category);
-      if (!keepSports(category, plainText(r.raw_title) + ' ' + title, evidenceText)) continue;
-      const date = r.created_at || new Date().toISOString();
-      if (duplicateInBatch(articleUrl, headlineKeys(title, r.raw_title), Date.parse(r.created_at || ''), seenUrls, seenTitles)) continue;
-      const mappedRegions = getValidRegionIds(r.region, plainText(r.raw_title) + ' ' + title + ' ' + evidenceText);
+      const evidenceText = summary;
+      const category = classifyCategory(title, evidenceText, r.category);
+      if (!keepSports(category, title, evidenceText)) continue;
+      const date = r.published_at || r.created_at || ''; 
+      if (duplicateInBatch(articleUrl, headlineKeys(title), Date.parse(date), seenUrls, seenTitles)) continue;
+      const mappedRegions = getValidRegionIds(r.region, title + ' ' + evidenceText);
       const numericScore = Number(r.ai_score);
-      const assessed = r.ai_score !== null && r.ai_score !== undefined && r.ai_score !== '' && Number.isFinite(numericScore) && numericScore >= 0 && numericScore <= 100;
+      const assessed = r.ai_score !== null && r.ai_score !== undefined && r.ai_score !== '' && Number.isFinite(numericScore) && numericScore >= 1 && numericScore <= 10;
       const dimensions: Record<string, number | null> = {};
       for (const id of ['korea_link','business_impact','cross_border','urgency','evidence']) {
         const value = r.dimensions?.[id];
@@ -165,12 +169,13 @@ export async function GET(request: Request) {
         regions: mappedRegions,
         date,
         summary: summary || '原文内容分析中...',
-        ai_assisted: !!r.ai_summary || !!r.translated_title,
+        ai_assisted: !!r.ai_summary || !!r.strategic_report,
         content_kind: 'rss_excerpt',
-        hasReport: !!r.deep_report,
+        hasReport: !!r.strategic_report,
         relevance: assessed ? {
-          score: numericScore,
-          reason: plainText(r.deep_report) || '尚无针对此条新闻的具体韩国关联分析。',
+          // news.ai_score 为 1–10；前端沿用 0–100 评分及热点阈值。
+          score: Math.round(numericScore * 10),
+          reason: plainText(r.strategic_report) || '尚无针对此条新闻的具体韩国关联分析。',
           channel: plainText(r.channel) || '尚未提供具体传导机制',
           companies: Array.isArray(r.companies) ? r.companies : [],
           dimensions,
@@ -223,7 +228,7 @@ export async function GET(request: Request) {
       hasMore: false,
       has_more: false
     };
-    return Response.json({...payload, data: payload, result: payload, success: true});
+    return Response.json({...payload, data: payload, result: payload, success: true}, {headers: {'Cache-Control': 'no-store'}});
   } catch (error: any) {
     return Response.json({...safeFallback, data: safeFallback, result: safeFallback, error: error.message}, {status: 200});
   }
