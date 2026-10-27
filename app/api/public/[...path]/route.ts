@@ -1,3 +1,6 @@
+import communityCatalog from '../../../../lib/research/community-sources.json';
+import {readIntelligence,isImportant,isFeatured,isHot,THRESHOLDS,SELECTION_VERSION} from '../../../../lib/research/selection';
+import {retry} from '../../../../lib/research/network';
 import feedCatalog from '../../../../lib/research/feeds.json';
 
 // 业务规则：仅统一分类、地区、去重和体育范围；不负责连接数据库。
@@ -114,10 +117,13 @@ export async function GET(request: Request) {
   if (url.pathname.endsWith('/sources')) {
     const catalog: any=feedCatalog;
     const feeds=Array.isArray(catalog)?catalog:catalog.feeds||[];
-    return Response.json({sources:feeds.filter((f:any)=>f.enabled!==false&&!f.replaced_by&&f.ingest!=='reference').map((f:any)=>({
-      id:f.id||f.url,name:f.name,homepage:f.homepage||f.url,country:f.country||'',
-      region:f.coverage_region||'other',type:f.source_type||'新闻媒体',status_label:'信源目录；实时采集结果以运行日志为准'
-    }))}, {headers:{'Cache-Control':'no-store'}});
+    const newsSources=feeds.filter((f:any)=>f.enabled!==false&&!f.replaced_by&&f.ingest!=='reference').map((f:any)=>({
+      id:f.id||f.url,name:f.name,homepage:f.homepage||f.url,country:f.country||'',region:f.coverage_region||'other',type:f.source_type||'新闻媒体',
+      status_label:'核心新闻源 · '+(f.purpose||'通过重要性与韩国关联两层筛选')
+    }));
+    const communities=communityCatalog.map((f:any)=>({id:f.id,name:f.name,homepage:f.homepage,country:'韩国',region:'east-asia',type:f.source_type||'社区参考',
+      status_label:(f.enabled?(f.adapter==='naver'?'需要管理员配置 Naver API · ':'已配置采集 · '):'未启用 · ')+f.scope}));
+    return Response.json({sources:[...newsSources,...communities]}, {headers:{'Cache-Control':'no-store'}});
   }
   if (url.pathname.endsWith('/data')) return Response.json({});
   if (url.pathname.endsWith('/refresh')) return Response.json({success:true, mode:'read-latest', message:'重新读取已入库新闻；采集通过现有 pipeline 执行。'}, {headers:{'Cache-Control':'no-store'}});
@@ -131,7 +137,7 @@ export async function GET(request: Request) {
   const safeFallback = {
     news: [], hot: [], items: [], events: [],
     counts: { news: 0, assessed: 0, reports: 0 },
-    thresholds: { hot: 50 }, total: 0, page: 1, hasMore: false, has_more: false, regions: []
+    thresholds: THRESHOLDS, total: 0, page: 1, hasMore: false, has_more: false, regions: []
   };
 
   try {
@@ -142,22 +148,40 @@ export async function GET(request: Request) {
     if (!supabaseUrl || !anonKey) return Response.json({...safeFallback,success:false,error:'NEWS_CONFIG_MISSING'}, {status:503,headers:{'Cache-Control':'no-store'}});
 
     const tableName = "english_hot_news";
-    const fetchUrl = `${supabaseUrl}/rest/v1/${tableName}?select=*&order=id.desc&limit=500`;
-    
-    const res = await fetch(fetchUrl, {
-      headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, "Content-Type": "application/json" },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(10000) 
-    });
-
-    if (!res.ok) {
-      const detail=await res.json().catch(()=>({}));
-      console.error('Public news read failed:', res.status, String(detail.code||''), String(detail.message||'').slice(0,250));
-      return Response.json({...safeFallback, success: false, error: 'NEWS_READ_FAILED'}, {status: 502, headers: {'Cache-Control': 'no-store'}});
+    const rawRecords:any[]=[];
+    const pageLimit=500;
+    const params=new URLSearchParams({select:'*',order:'id.desc',limit:String(pageLimit)});
+    if(modeParam==='community'){
+      params.set('raw_url','in.('+communityCatalog.filter(s=>s.enabled).map(s=>JSON.stringify(s.homepage)).join(',')+')');
     }
-
-    const rawRecords = await res.json();
-    if (!Array.isArray(rawRecords)) return Response.json({...safeFallback,success:false,error:'NEWS_RESPONSE_INVALID'}, {status:502,headers:{'Cache-Control':'no-store'}});
+    for(let offset=0;offset<(modeParam==='community'?500:2000);offset+=pageLimit){
+      params.set('offset',String(offset));
+      const res=await retry(async()=>{
+        const r=await fetch(`${supabaseUrl}/rest/v1/${tableName}?${params}`,{
+          headers:{apikey:anonKey,Authorization:`Bearer ${anonKey}`},cache:'no-store',signal:AbortSignal.timeout(15000)
+        });
+        if(!r.ok)throw Object.assign(Error(`NEWS_READ_FAILED HTTP ${r.status}`),{status:r.status});return r;
+      },2);
+      const rows=await res.json();
+      if(!Array.isArray(rows))throw Error('NEWS_RESPONSE_INVALID');
+      rawRecords.push(...rows);if(rows.length<pageLimit)break;
+    }
+    if(modeParam==='community'){
+      const days=Number(url.searchParams.get('days')||7),q=qParam.toLowerCase();
+      const seen=new Set<string>();
+      const items=rawRecords.flatMap(r=>{
+        const primary=sourceArticles(r.cluster_urls).find(x=>x.content_type==='community_digest');
+        const c=primary?.community;
+        if(!c||c.version!=='community-20261027-v1'||!Array.isArray(c.themes)||!c.themes.length||seen.has(r.raw_url))return [];
+        seen.add(r.raw_url);
+        const age=Date.now()-Date.parse(c.observedAt);
+        if(!Number.isFinite(age)||age < -3600000||([1,7,30].includes(days)&&age>days*86400000))return [];
+        if(q&&!JSON.stringify([c.title,c.summary,c.themes]).toLowerCase().includes(q))return [];
+        return [{id:r.id,type:'community',title:c.title,url:r.raw_url,source:r.source_site,date:c.observedAt,summary:c.summary,community:c}];
+      }).sort((a,b)=>b.date.localeCompare(a.date));
+      return Response.json({...safeFallback,success:true,items,news:[],total:items.length,counts:{news:0,assessed:0,reports:0},selection_version:SELECTION_VERSION}, {headers:{'Cache-Control':'no-store'}});
+    }
+    let pendingAssessment=0;
 
 
     const formattedRecords: any[] = [];
@@ -170,15 +194,19 @@ export async function GET(request: Request) {
       const summary = plainText(r.ai_summary);
       const linkedSources = sourceArticles(r.cluster_urls);
       const primary = linkedSources.find(x=>cleanArticleUrl(x.url)===articleUrl) || linkedSources[0];
-      const evidenceText = plainText(primary?.excerpt || r.content || r.original_excerpt || r.ai_summary);
+      if(primary?.content_type==='community_digest')continue;
+      const evidenceText = plainText(primary?.excerpt || r.original_excerpt || '');
+      const assessment=readIntelligence(primary?.intelligence,plainText(r.raw_title)+' '+evidenceText);
+      if(!assessment){pendingAssessment++;continue;}
+      if(!isImportant(assessment))continue;
       const headline = [...new Set([plainText(r.raw_title),title])].filter(Boolean).join(' ');
-      const category = classifyCategory(headline, evidenceText, r.assigned_category);
+      const category = assessment.category;
       if (!keepSports(category, headline, evidenceText)) continue;
       const dateCandidate = r.published_at || primary?.published_at || r.created_at || '';
       const date = Number.isFinite(Date.parse(dateCandidate)) ? new Date(dateCandidate).toISOString() : '';
       if (duplicateInBatch(articleUrl, headlineKeys(title, r.raw_title), Date.parse(date), seenUrls, seenTitles)) continue;
       const mappedRegions = getValidRegionIds(r.region || primary?.regions, headline + ' ' + evidenceText);
-      const numericScore = publicScore(r.ai_score);
+      const numericScore = assessment.korea;
       const assessed = numericScore !== null;
       const dimensions: Record<string, number | null> = {};
       for (const id of ['korea_link','business_impact','cross_border','urgency','evidence']) {
@@ -197,15 +225,16 @@ export async function GET(request: Request) {
         summary: summary || '原文内容分析中...',
         ai_assisted: !!r.ai_summary || !!r.translated_title,
         content_kind: 'rss_excerpt',
+        intelligence: assessment,
         hasReport: !!r.deep_report,
         relevance: assessed ? {
           score: numericScore,
-          reason: plainText(r.deep_report) || '尚无针对此条新闻的具体韩国关联分析。',
-          channel: plainText(r.channel) || '尚未提供具体传导机制',
+          reason: assessment.koreaReason,
+          channel: assessment.mechanism,
           companies: Array.isArray(r.companies) ? r.companies : [],
           dimensions,
-          confidence: ['low','medium','high'].includes(r.confidence) ? r.confidence : 'low',
-          quote: plainText(r.quote) || title
+          confidence: assessment.confidence,
+          quote: assessment.koreaEvidence
         } : null,
         source_count: Math.max(1,new Set(linkedSources.map(x=>x.source||x.url).filter(Boolean)).size)
       });
@@ -232,9 +261,9 @@ export async function GET(request: Request) {
       finalRecords = finalRecords.filter(r => r.title.toLowerCase().includes(q) || r.summary.toLowerCase().includes(q));
     }
     if (kindParam === 'brief' || modeParam === 'research') finalRecords = finalRecords.filter(r => r.hasReport);
-    const rankedRecords = finalRecords.filter(r => r.relevance && r.relevance.score >= 50)
-      .slice().sort((a,b) => b.relevance.score - a.relevance.score || String(b.date).localeCompare(String(a.date)));
-    if (modeParam === 'hot') finalRecords = rankedRecords;
+    const rankedRecords=finalRecords.filter(r=>isHot(r.intelligence)).slice().sort((a,b)=>b.intelligence.priority-a.intelligence.priority||String(b.date).localeCompare(String(a.date)));
+    if(modeParam==='featured'||!modeParam)finalRecords=finalRecords.filter(r=>isFeatured(r.intelligence)).sort((a,b)=>b.intelligence.priority-a.intelligence.priority||String(b.date).localeCompare(String(a.date)));
+    if(modeParam==='hot')finalRecords=rankedRecords;
 
     const stats = {
       news: finalRecords.length,
@@ -251,7 +280,10 @@ export async function GET(request: Request) {
       items: pageItems,
       events: [],
       counts: stats,
-      thresholds: {hot: 50},
+      thresholds: THRESHOLDS,
+      selection_version: SELECTION_VERSION,
+      pending_assessment: pendingAssessment,
+      read_window: rawRecords.length,
       regions: regionCounts,
       total: finalRecords.length,
       page,

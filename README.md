@@ -1,109 +1,113 @@
-# Korea Brief · 全球新闻与韩国企业战略
+# Korea Brief：两层精选与韩国社区观察更新
 
-公开站点：https://korea-brief-liuli.ryuzakiikk.chatgpt.site
+此包包含 9 个完整代码/配置文件，按同名路径覆盖现有工程。不是新架构，也不是可脱离原工程运行的另一个网站。
+保留 Next/Vercel、PostgreSQL + Drizzle 采集、Supabase REST 读取、DeepSeek、english_hot_news 表和原黑白样式。无需新建表、迁移数据库或重新安装依赖。
 
-主流程：全球公开新闻 → 中文摘要＋地区/分类识别 → 韩国企业相关性评估 → 重点事件 → 有引用的战略报告。研究展示是二级功能，申请作品集仅管理员可见。视觉采用黑、白、灰。
+## 为什么原来的“精选”不精选
 
-## 功能
+此前 route.ts 仅在 mode=hot 时执行相关度>=50筛选，mode=featured 没有独立门槛，实际返回所有新闻；旧评分又没有独立的重要性维度。截图中的25分新闻因此会进入精选。
 
-| 左侧入口 | 行为 |
+## 新规则（均为 AI 编辑判断，不是概率）
+
+| 页面 | 规则 |
 |---|---|
-| 精选 | 编辑精选或达到AI阈值的新闻，兼有战略报告筛选 |
-| 新闻动态 | 原文时间排序、连续加载、搜索、分类、时间筛选；每60秒检查新动态，有新内容时提示而不打断阅读 |
-| 热点榜 | AI五维相关性排序，同事件合并；可展开依据、机制、潜在企业与把握度 |
-| 日报 | 待开放页面；没有实现日报生成、邮件或订阅任务 |
-| 地区 | 东亚、东南亚、欧洲、北美、南美、非洲、大洋洲、中东；每区内可按六类别筛选 |
-| 收藏 | 登录用户收藏特定已公开报告，云端跨设备保存；不收藏原文新闻 |
+| 新闻动态 / 地区 | 新闻重要性 >=60；按原文时间排序。重要但与韩国关系弱的世界新闻可以出现。 |
+| 精选 | 重要性 >=60 + 韩国关联 >=70 + 原文证据 + 具体传导机制 + 把握度非低 |
+| 热点榜 | 重要性 >=70 + 韩国关联 >=80，且满足精选证据条件 |
+| 韩国舆情 | 独立采样摘要，主题重要性 >=60；不进入新闻精选/热点榜，不把平台热度当作韩国企业影响 |
 
-六类别：经济、政治、社会、娱乐、科技、体育。地区允许多值，独立于类别。地区按内容归类；来源所在地只是媒体背景。尚未纳入八区的南亚、中亚等和难以定位的议题进入“跨地区／待归类”。不把印度当作东南亚。
+精选与热点排序：韩国关联60% + 重要性30% + 证据把握度10%。RSS片段的把握度上限为中；仅标题不能进精选。AI摘录须能在原始标题/摘要中找到，高韩国关联还需韩国实体或产业变化依据。
+六类新闻和八个地区保留。来源所在地不等于事件地区。并非所有地区每天都有足够重要的新闻，不凑数量。
 
-报告分为事实、韩国企业关联、传导机制、潜在机会与风险、行动/验证选项、局限、继续跟踪与原文引用。潜在企业不是已证实参与者。内容经编辑核验后公开。
+新版评估存于既有 cluster_urls 的主来源对象 intelligence 中；旧 ai_score 保持原有1–10兼容字段。无需改 schema.ts。
+未入选记录仍保留数据库中，避免反复分析付费；公众接口不显示。旧记录没有新版评估时不使用旧分数冒充新版评估。
 
-## 信源与运行状态
+## 覆盖文件
 
-目录共136项：默认启用55个经过实际RSS/Atom读取检测的订阅，另有8个官方/媒体资料入口，其余保留为备用、未通过或重复入口。55个默认订阅中，53个在本次检测中有近7日、至少80字符的摘要；韩国经济日报与欧洲央行为标题索引。后台已有的明确关闭配置继续保留，实际启用数以后台为准。
+- app/page.tsx
+- app/api/public/[...path]/route.ts
+- scripts/run-pipeline.ts
+- lib/research/ai.ts
+- lib/research/selection.ts
+- lib/research/network.ts
+- lib/research/community.ts
+- lib/research/community-sources.json
+- lib/research/feeds.json
 
-| 地区 | 默认订阅举例 |
-|---|---|
-| 东亚 | 联韩社、韩国经济日报、Maeil Business、Korea Herald、Korea Times、The Mainichi、Nippon.com、HKFP |
-| 东南亚 | CNA、ANTARA、VnExpress、Vietnam News、Inquirer、Bangkok Post、Business Times |
-| 欧洲 | FT、DW、France 24、Guardian商业、欧洲央行、欧盟理事会 |
-| 北美 | NPR、CNBC、TechCrunch、The Verge、美联储、FTC |
-| 南美 | Agência Brasil、MercoPress、Folha市场、Buenos Aires Herald |
-| 非洲 | Africanews、AllAfrica、Daily Maverick |
-| 大洋洲 | RNZ、RNZ商业、Guardian澳大利亚 |
-| 中东 | Al Jazeera、Arab News、The National |
+未改动 CSS、package.json、部署配置、登录收藏、数据库表结构。新增“韩国舆情”导航与双分数/证据展示，沿用现有卡片样式。日报仍为预留入口。
 
-全球/产业层包括 BBC、Variety、Billboard、Music Business Worldwide、Digital Music News、Music Ally、GamesIndustry.biz、WTO、BIS。Samsung与SK hynix官方新闻室标记为企业自述；HYBE、SM、CJ ENM投资者资料、OpenDART等为手工资料入口，不自动冒充新闻正文。
+## 按这个顺序运行（原工程根目录 PowerShell）
 
-检测来自验证机器的Node fetch，不等于生产Worker可用保证。后台“检测启用信源”会从部署环境请求真实地址，记录状态、条目数和摘要数；采集也会更新状态。失效来源默认关闭，不伪造内容。完整名单、用途和维护方法见 [docs/SOURCES.md](docs/SOURCES.md)，检测记录见 `docs/source-verification.json`，可导入其他RSS阅读器的清单见 `source-catalog.opml`。
-
-复测：`node scripts/verify-sources.mjs lib/research/feeds.json outputs/source-verification.json`。
-
-后台“更新全部启用来源”每次请求8源、每源最多12条，通过浏览器顺序处理剩余批次。保持后台页面打开直到完成；单源失败会记录并继续。
-
-## AI评估与发布
-
-- 每项0—5分：韩国关联30%、经营影响25%、跨境传导20%、时效15%、证据10%；由服务器换算0—100分。
-- 热点默认至少50分且韩国关联大于0；AI精选默认至少75分、关联大于0、把握度不为低。编辑可覆盖精选选择。
-- 摘要评估每批最多8条，使用实际内容（最多3000字符），校验原文短摘录、地区、类别和输出ID。RSS证据最高3/5，把握度最高为中。
-- “一键更新新闻与AI报告”：采集 → 最多3批评估 → 最多3个相关事件报告草稿。报告仍需审核后公开。
-- 摘要与评估可按设置自动公开或先保持草稿；新报告始终是草稿。公开API不返回私人申请材料、提示词、原始全文、个人判断或密钥。
-- 地区初步关键词归类与AI归类有不同标记，关键词本身不会生成相关度分数。
-
-## 云端、账户与收藏
-
-线上主库为 Cloudflare D1，包括新闻、资料、报告、配置、审核日志和用户收藏。原Supabase只读导入历史资料，不持续回写。普通用户无需配置模型。
-
-使用平台提供的ChatGPT登录识别用户，没有另外开发邮箱密码注册。收藏表 `kb_favorites` 以稳定用户ID和报告ID为联合主键；服务端只按当前会话用户读写，不接受前端指定用户。撤下的报告不再从收藏返回。管理员仍通过所有者身份进入 `/admin`，普通登录用户不会因此获得管理权限。
-
-## 更新机制与当前验证范围
-
-前台每30分钟最多触发一次轮转来源采集，每次最多12个来源，优先覆盖地区、读取较久未检查的来源并分散发布域名；全部失败时5分钟后可重试。它不会调用付费模型。新闻动态页每60秒检查更新，前台轮询不等于后台全天定时任务。
-
-AI由管理员点击触发，尚未配置网站无人访问时的定时采集/评估。本轮信源经过验证机器实读；生产环境各来源的可用性、真实模型调用与正式登录后的跨设备收藏仍需按运行记录核验。本地UI使用明确标注的临时测试资料验收后清除，测试资料不进入迁移或正式站点。
-
-## 完整工程放到F盘
-
-1. 安装 Node.js 22.13+，解压到例如 `F:\KoreaBrief-Global`。
-2. 双击 `START-WINDOWS.bat`：首次安装依赖、构建和初始化本地结构，随后启动开发服务。需要正常的包下载网络。
-3. 打开终端显示的本地网址（通常 `http://localhost:5173`）。本地便携开发模式的“登录 / 注册”会使用测试用户 `seedy@sites.test`，不连接正式账户。首次创建的 `.dev.vars` 只为该本地测试用户授予开发后台访问。
-4. 在 `/admin` 设置模型密钥、关注企业、新闻来源等，然后采集和生成。真实密钥不随源码包提供。正式云端原有密钥设置继续沿用。
-
-本地库和线上库独立。F盘开发不会自动同步正式新闻和收藏。正式读者直接使用公开网址，不依赖你本地运行。
-
-手动命令：
+先覆盖文件，再检查：
 
 ```powershell
-cd F:\KoreaBrief-Global
-npx --yes pnpm@11.25.0 install
-npm run build
-Copy-Item .dev.vars.example .dev.vars # 仅第一次本地开发，没有现有配置时
-node scripts/init-local.mjs
-npm run dev
+npm run pipeline -- --check
 ```
 
-初始化脚本只应用缺少的本地表结构，保留现有数据；不会重放已存在的迁移。迁移 `0000_real_ego.sql` 为原结构，`0001_plain_kitty_pryde.sql` 新增用户收藏。已应用历史迁移不可修改，后续追加。
+一次性重评近期旧数据（会使用现有 DeepSeek 额度，最多500次新闻评估；不删除旧数据）：
 
-## 验证与主要文件
+```powershell
+npm run pipeline -- --reassess-existing --days=30 --limit=500
+```
 
-```text
-node --test tests/domain.test.mjs tests/favorites-db.test.mjs
-npx tsc --noEmit --incremental false
+此命令读取数据库中的旧记录，不限于还在RSS里的文章。已有新版评估的记录自动跳过；超过批次时可重复运行。只有标题、没有原始片段的老记录会保持低把握度，不用旧AI摘要充当原始证据。
+
+再采集当前新闻并生成社区观察：
+
+```powershell
+npm run pipeline
 npm run build
 ```
 
-23项测试覆盖身份、公开投影、引用与审核、地区/类别交叉筛选、错误地理归类、评分约束、事件去重和用户收藏的真实SQL隔离。
+默认最多300条新闻AI评估，按31个来源各3–8个候选采集，通常低于该上限。每个社区最多一次摘要调用；样本内容未变时复用摘要并更新热度。失败的来源不会取消已完成写入。
+日志 important/featured/not_selected 是本次成功处理的记录数，不是全站总数；failed_items/failed_sources 非零会以非零状态退出，但前面成功的记录已保留。
 
-- `app/page.tsx`、`app/globals.css`：黑白左侧导航、新闻、地区、报告与收藏界面。
-- `lib/research/strategy-domain.mjs`：地区、分类、评分、精选与战略验证。
-- `lib/research/news.ts`：采集、摘要、相关性评估、事件报告。
-- `lib/research/pipeline.ts`：资料、证据快照、模型报告、审核与版本。
-- `app/api/me/favorites`：登录用户的云端报告收藏。
-- `app/admin`：管理后台、信源编辑、关注企业/行业和阈值。
-- `db/schema.ts`、`drizzle`：D1结构与迁移。
-- `docs/PRODUCT-STRATEGY.md`：产品评估、与延世GSIS/职业目标的连接及运营建议。
+提交所有9个文件（不要只提交旧版三个文件）：
 
-源码包不含node_modules、真实密钥、测试数据或正式数据库副本。Windows启动脚本已做代码检查，未在真实Windows机器执行。
+```powershell
+git --literal-pathspecs add -- "app/page.tsx" "app/api/public/[...path]/route.ts" "scripts/run-pipeline.ts" "lib/research/ai.ts" "lib/research/selection.ts" "lib/research/network.ts" "lib/research/community.ts" "lib/research/community-sources.json" "lib/research/feeds.json"
+git commit -m "Add importance and Korea relevance gates with community briefs"
+git push
+```
 
-界面信息组织参考：https://aihot.news/ 。
+确认 Vercel 对应提交的 Production 部署 Ready，再 Ctrl+F5 刷新。此次有代码变化，需要新部署；以后只采集新数据，无需为每次数据更新部署。采集仍由原有本地 pipeline 执行，没有新增定时任务；网站刷新不会触发付费采集。
+
+## 韩国社区：实际可用范围
+
+1. Theqoo HOT：自动读取公开热门列表的标题、浏览数、评论数。当前页面未取得评论正文；摘要只描述话题和热度，不推测赞成/反对比例。只有图片、没有文本的内容不做图像猜测。
+2. GeekNews：自动读取官方 RSS 的技术/创业讨论摘要。RSS没有热度指标，明确标为“讨论样本”，不冒充全站热门。
+3. Naver Cafe：已经实现官方 API 适配器。仅在采集机根目录 .env 加入 NAVER_CLIENT_ID 和 NAVER_CLIENT_SECRET 后启用。未配置会跳过，不影响新闻和另外两个社区。官方接口是公开帖子关键词检索，不返回全站热榜或完整评论，不将“检索结果”称为“最热门”。
+4. Nate Pann、DC Inside、FM Korea、X：仅列为未启用的参考入口，没有假装已完成接入。Nate Pann当前对通用采集器的robots规则禁止抓取；其他来源尚无此工程已验证的接入方式，X还涉及官方授权/预算。
+
+Naver 凭据仅管理员在采集环境配置，不展示给普通用户，也不需要设置 NEXT_PUBLIC_ 前缀。官方申请入口：https://developers.naver.com/apps/#/register 。选择“搜索”API。
+
+```dotenv
+NAVER_CLIENT_ID=你的官方应用ClientID
+NAVER_CLIENT_SECRET=你的官方应用ClientSecret
+```
+
+以上为可选配置，数据库连接和现有 DeepSeek 配置不变。不向普通用户展示设置表单。
+
+只更新社区：
+
+```powershell
+npm run pipeline -- --community-only
+```
+
+只更新新闻：
+
+```powershell
+npm run pipeline -- --skip-community
+```
+
+每个平台保存一份滚动更新的社区观察；更新时保留记录ID、刷新采样时间，目前不是每日历史档案。摘要附主题引用、采样数量和可用的真实热度，明确不代表全体韩国公众观点。当前不提供完整评论分析或跨平台情绪占比。
+
+## 已修正的错误处理
+
+- 连接/响应超时、429、部分5xx有限重试；403/404不无限重试。
+- RSS DNS 错误明确写RSS，不再提示修改DATABASE_URL。
+- TimeoutError/AbortError（包括先前显示为23的情况）明确归类超时。
+- 写入后的REST校验失败，明确“写入已保留，校验未完成/不可见”，不把整轮采集说成全部失败。
+- 公开接口读取最多最近2000条记录后筛选，响应附 read_window；历史重评最多检查最近5000条。大规模历史数据需要以后另行分页优化。
+
+详见 SOURCE-CATALOG.md 和 VALIDATION.md。

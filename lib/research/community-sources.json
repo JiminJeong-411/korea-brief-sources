@@ -1,0 +1,9 @@
+[
+  {"id":"theqoo-hot","name":"Theqoo · HOT","url":"https://theqoo.net/hot","homepage":"https://theqoo.net/hot","adapter":"theqoo","enabled":true,"coverage_region":"east-asia","country":"韩国","source_type":"社区热门话题","scope":"HOT 首页标题、站内浏览数与评论数；未采集评论正文，不能概括评论立场","max_items":20},
+  {"id":"geeknews","name":"GeekNews · 技术社区","url":"https://news.hada.io/rss/news","homepage":"https://news.hada.io/","adapter":"rss","enabled":true,"coverage_region":"east-asia","country":"韩国","source_type":"社区帖子摘要","scope":"官方 RSS 的技术、创业讨论摘要；没有平台热度指标，不宣称全站热门","max_items":20},
+  {"id":"naver-cafe","name":"Naver Cafe · 公开讨论","url":"https://openapi.naver.com/v1/search/cafearticle.json","homepage":"https://section.cafe.naver.com/","adapter":"naver","enabled":true,"coverage_region":"east-asia","country":"韩国","source_type":"社区检索样本","scope":"官方 API 返回的公开帖子标题与摘要；关键词检索样本，不是全站热榜或评论全集","max_items":24,"queries":["K팝 티켓 가격","음원 플랫폼 구독료","생성형 AI 저작권","전기차 소비자"]},
+  {"id":"nate-pann","name":"Nate Pann","homepage":"https://pann.nate.com/talk/ranking","adapter":"reference","enabled":false,"scope":"尚未接入：当前 robots 对通用采集器禁止访问，保留人工阅读入口"},
+  {"id":"dcinside","name":"DC Inside","homepage":"https://www.dcinside.com/","adapter":"reference","enabled":false,"scope":"尚未接入：需确认可稳定使用的数据接口和板块范围"},
+  {"id":"fmkorea","name":"FM Korea","homepage":"https://www.fmkorea.com/","adapter":"reference","enabled":false,"scope":"尚未接入：需确认可稳定使用的数据接口和板块范围"},
+  {"id":"x-korea","name":"X · 韩国话题","homepage":"https://x.com/","adapter":"reference","enabled":false,"scope":"尚未接入：需管理员配置官方 API 授权与预算"}
+]
