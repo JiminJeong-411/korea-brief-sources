@@ -1,4 +1,5 @@
-import {keepSportsNews,majorSportsMilestone,sportsEventKey} from '../../../../lib/research/sports';
+import {clusterPublicArticles,mergeSourceLinks,readEvent,CLUSTER_VERSION} from '../../../../lib/research/clustering';
+import {keepSportsNews,majorSportsMilestone} from '../../../../lib/research/sports';
 import communityCatalog from '../../../../lib/research/community-sources.json';
 import {readIntelligence,isImportant,isFeatured,isHot,THRESHOLDS,SELECTION_VERSION} from '../../../../lib/research/selection';
 import {retry} from '../../../../lib/research/network';
@@ -81,15 +82,6 @@ function cleanArticleUrl(value: unknown): string {
     url.hash='';for(const key of [...url.searchParams.keys()])if(/^(?:utm_|fbclid$|gclid$|mc_cid$|mc_eid$|spm$)/i.test(key))url.searchParams.delete(key);
     if(url.pathname!=='/')url.pathname=url.pathname.replace(/\/+$/,'');url.searchParams.sort();return url.toString();
   } catch {return '';}
-}
-function headlineKeys(...values: unknown[]): string[] {
-  return [...new Set(values.map(x=>plainText(x).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'')).filter(x=>x.length>=12))];
-}
-function duplicateInBatch(url: string, titles: string[], date: number, seenUrls: Set<string>, seenTitles: Map<string,number[]>): boolean {
-  const key=url.replace(/^(https?:\/\/)(?:www\.)/i,'$1');
-  const duplicate=seenUrls.has(key)||Number.isFinite(date)&&titles.some(t=>(seenTitles.get(t)||[]).some(old=>Math.abs(old-date)<=86400000));
-  seenUrls.add(key);if(Number.isFinite(date))for(const title of titles)seenTitles.set(title,[...(seenTitles.get(title)||[]),date]);
-  return duplicate;
 }
 const keepSports=keepSportsNews;
 
@@ -193,9 +185,15 @@ export async function GET(request: Request) {
 
 
     const formattedRecords: any[] = [];
-    const seenUrls = new Set<string>();
-    const seenTitles = new Map<string, number[]>();
-    const seenSportsEvents=new Map<string,number>();
+    const eventSourceMap=new Map<string,any[]>();
+    for(const row of rawRecords){
+      const sources=sourceArticles(row.cluster_urls),primary=sources.find(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row.raw_url))||sources[0],event=readEvent(primary?.event);
+      if(event&&primary?.content_type!=='community_digest'){
+        const list=eventSourceMap.get(event.id)||[];
+        list.push({url:row.raw_url,title:row.raw_title,source:row.source_site,published_at:primary?.published_at||null});
+        eventSourceMap.set(event.id,list);
+      }
+    }
     for (const r of rawRecords) {
       const title = plainText(r.translated_title || r.raw_title);
       const articleUrl = cleanArticleUrl(r.raw_url);
@@ -215,9 +213,6 @@ export async function GET(request: Request) {
       if (!keepSports(category, headline, evidenceText)){sportsExcluded++;continue;}
       const dateCandidate = r.published_at || primary?.published_at || r.created_at || '';
       const date = Number.isFinite(Date.parse(dateCandidate)) ? new Date(dateCandidate).toISOString() : '';
-      if (duplicateInBatch(articleUrl, headlineKeys(title, r.raw_title), Date.parse(date), seenUrls, seenTitles)) continue;
-      const eventKey=sportsEventKey(plainText(r.raw_title),evidenceText,date);
-      if(eventKey&&Number.isFinite(Date.parse(date))){const old=seenSportsEvents.get(eventKey);if(old!==undefined&&Math.abs(old-Date.parse(date))<2*86400000)continue;seenSportsEvents.set(eventKey,Date.parse(date));}
       const mappedRegions = getValidRegionIds(r.region || primary?.regions, headline + ' ' + evidenceText);
       const numericScore = assessment.korea;
       const assessed = numericScore !== null;
@@ -238,6 +233,8 @@ export async function GET(request: Request) {
         summary: summary || '原文内容分析中...',
         ai_assisted: !!r.ai_summary || !!r.translated_title,
         content_kind: 'rss_excerpt',
+        originalTitle:plainText(r.raw_title),excerpt:evidenceText,event:readEvent(primary?.event),
+        sources:mergeSourceLinks([{url:articleUrl,title:r.raw_title,source:r.source_site,published_at:primary?.published_at||null},...linkedSources,...(eventSourceMap.get(readEvent(primary?.event)?.id||'')||[]).filter(s=>!s.published_at||Math.abs(Date.parse(s.published_at)-Date.parse(date))<=72*3600000)]),
         intelligence: assessment,
         hasReport: !!r.deep_report && isFeatured(assessment),
         relevance: assessed ? {
@@ -259,8 +256,9 @@ export async function GET(request: Request) {
     const windowRecords = [1,7,30].includes(days)
       ? formattedRecords.filter(r => Date.parse(r.date) >= Date.now() - days * 86400000 && Date.parse(r.date) <= Date.now() + 3600000)
       : formattedRecords;
-    const regionCounts = Object.keys(REGION_RULES).map(id => ({id, count: windowRecords.filter(r => r.regions.includes(id)).length}));
-    let finalRecords = windowRecords;
+    const eventRecords=clusterPublicArticles(windowRecords);
+    const regionCounts = Object.keys(REGION_RULES).map(id => ({id, count: eventRecords.filter(r => r.regions.includes(id)).length}));
+    let finalRecords = eventRecords;
     if (categoryParam) {
       const category = normalizeCategory(categoryParam);
       finalRecords = finalRecords.filter(r => r.category === category);
@@ -271,7 +269,7 @@ export async function GET(request: Request) {
     }
     if (qParam) {
       const q = qParam.toLowerCase();
-      finalRecords = finalRecords.filter(r => r.title.toLowerCase().includes(q) || r.summary.toLowerCase().includes(q));
+      finalRecords = finalRecords.filter(r => String(r.search_text||r.title+' '+r.summary).toLowerCase().includes(q));
     }
     if (kindParam === 'brief' || modeParam === 'research') finalRecords = finalRecords.filter(r => r.hasReport);
     const rankedRecords=finalRecords.filter(r=>isHot(r.intelligence)).slice().sort((a,b)=>b.intelligence.priority-a.intelligence.priority||String(b.date).localeCompare(String(a.date)));
@@ -286,18 +284,20 @@ export async function GET(request: Request) {
     const requestedPage=Number(url.searchParams.get('page')||1);
     const page=Number.isInteger(requestedPage)&&requestedPage>0?requestedPage:1;
     const pageSize=30;
-    const pageItems=finalRecords.slice((page-1)*pageSize,page*pageSize);
+    const publicRecord=(r:any)=>{const {excerpt,originalTitle,event,search_text,...rest}=r;return rest;};
+    const pageItems=finalRecords.slice((page-1)*pageSize,page*pageSize).map(publicRecord);
     const payload = {
       news: pageItems,
-      hot: rankedRecords.slice(0,5),
+      hot: rankedRecords.slice(0,5).map(publicRecord),
       items: pageItems,
       events: [],
       counts: stats,
       thresholds: THRESHOLDS,
       selection_version: SELECTION_VERSION,
+      clustering:{version:CLUSTER_VERSION,unprocessed_articles:windowRecords.filter(r=>!r.event?.checked).length,articles:windowRecords.length,events:eventRecords.length,merged:windowRecords.length-eventRecords.length},
       pending_assessment: pendingAssessment,
       read_window: rawRecords.length,
-      coverage:{pending:pendingAssessment,needs_reassessment:needsReassessment,below_importance:belowImportance,sports_excluded:sportsExcluded,categories:Object.fromEntries(Object.keys(CATEGORY_LABELS).map(id=>[id,windowRecords.filter(r=>r.category===id).length]))},
+      coverage:{pending:pendingAssessment,needs_reassessment:needsReassessment,below_importance:belowImportance,sports_excluded:sportsExcluded,categories:Object.fromEntries(Object.keys(CATEGORY_LABELS).map(id=>[id,eventRecords.filter(r=>r.category===id).length]))},
       regions: regionCounts,
       total: finalRecords.length,
       page,

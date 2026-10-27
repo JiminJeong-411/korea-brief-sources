@@ -1,113 +1,105 @@
-# Korea Brief：两层精选与韩国社区观察更新
+## 最新更新：同一事件只展示一张卡片
 
-此包包含 9 个完整代码/配置文件，按同名路径覆盖现有工程。不是新架构，也不是可脱离原工程运行的另一个网站。
-保留 Next/Vercel、PostgreSQL + Drizzle 采集、Supabase REST 读取、DeepSeek、english_hot_news 表和原黑白样式。无需新建表、迁移数据库或重新安装依赖。
+不同来源的报道保留各自记录，后台识别同一事件并保存共享事件ID，公开接口聚合后再筛选、统计、分页。卡片显示媒体/报道数量，展开列出每篇原文。提案/通过、预测/结果及重要后续进展不按同一主题合并。
 
-## 为什么原来的“精选”不精选
+**已经替换上个版本的用户：本次需要重新覆盖、提交代码并部署一次，然后在Actions手动运行 mode=cluster。无需新增Secrets、改连接或改表。** 详见CLUSTERING.md。
 
-此前 route.ts 仅在 mode=hot 时执行相关度>=50筛选，mode=featured 没有独立门槛，实际返回所有新闻；旧评分又没有独立的重要性维度。截图中的25分新闻因此会进入精选。
+# Korea Brief：覆盖修正与云端定时采集（2026-10-27 新闻v2 / 社区v2 / 事件聚合v1）
 
-## 新规则（均为 AI 编辑判断，不是概率）
+此包按原路径覆盖现有工程，包含15个完整代码/配置文件。保留原有Next/Vercel、PostgreSQL/Drizzle、Supabase REST、DeepSeek及english_hot_news表，不需要改表、删数据、重新设计UI或改本地数据库连接。
 
-| 页面 | 规则 |
+## 本次实际发现
+
+线上 /api/public/feed?mode=stream&days=7 返回33条，但 read_window=778、pending_assessment=594；33不是数据库总量。594是整个读取范围内没有新版两层评分的记录，不表示全部来自最近七天。
+原31个启用新闻源没有专门体育源；体育规则漏掉金球奖；重要性提示词过度偏商业/制度；每源仅取最前3–8条，可能在AI筛选之前就漏掉重大事件。
+
+## 修正结果
+
+- 启用36个新闻源：原31个，补回BBC Sport、Guardian体育、韩联社体育、Variety及韩联社文化娱乐。
+- 新闻重要性按类别判断，不要求体育/文化新闻都能写成企业战略分析。
+- 金球奖正式结果、世界级赛事夺冠/重要奖牌/世界纪录有明确的重大事件收录规则。显示规则来源，新闻重要性设最低门槛；不提高韩国关联分。
+- 预测、赔率、提名、泄露、球迷投票、进球集锦等不当作正式获奖结果。重要奖项男女同标准。
+- 同一届男子/女子金球奖结果分别聚合，其他单项奖不误合并；普通新闻增加后台语义事件聚合，保留各来源原文。
+- RSS最多扫描前200条，先找重大结果，再取每源候选（一般12、体育/新文化24、企业公告3）。重大结果优先，其余轮询信源，避免排在末尾的媒体因AI预算耗尽而被饿死。
+- 修正韩国实体词表过窄导致LG等直接关联被错误降级的问题；既有错误评估仍需重评，不虚构原文证据。
+- v1两层评分继续可读，逐步升级到v2；更早的单一ai_score不冒充两层评分。明显排除的旧体育/琐事写入无AI费用的筛除标记，避免反复占据待处理列表。
+
+## 页面门槛
+
+| 页面 | 门槛 |
 |---|---|
-| 新闻动态 / 地区 | 新闻重要性 >=60；按原文时间排序。重要但与韩国关系弱的世界新闻可以出现。 |
-| 精选 | 重要性 >=60 + 韩国关联 >=70 + 原文证据 + 具体传导机制 + 把握度非低 |
-| 热点榜 | 重要性 >=70 + 韩国关联 >=80，且满足精选证据条件 |
-| 韩国舆情 | 独立采样摘要，主题重要性 >=60；不进入新闻精选/热点榜，不把平台热度当作韩国企业影响 |
+| 新闻动态 / 地区 | 公共重要性>=60；无需韩国关联高 |
+| 精选 | 重要性>=60、韩国关联>=70、原文证据/具体机制、把握度非低 |
+| 热点榜 | 重要性>=70、韩国关联>=80，且满足证据要求 |
+| 韩国舆情 | 独立的社区观察；不混入新闻热点 |
 
-精选与热点排序：韩国关联60% + 重要性30% + 证据把握度10%。RSS片段的把握度上限为中；仅标题不能进精选。AI摘录须能在原始标题/摘要中找到，高韩国关联还需韩国实体或产业变化依据。
-六类新闻和八个地区保留。来源所在地不等于事件地区。并非所有地区每天都有足够重要的新闻，不凑数量。
+不设置每天必须凑多少条的数量指标。重大赛事/奖项报道只提高新闻重要性，不把“全球重要”冒充“韩国相关”。
 
-新版评估存于既有 cluster_urls 的主来源对象 intelligence 中；旧 ai_score 保持原有1–10兼容字段。无需改 schema.ts。
-未入选记录仍保留数据库中，避免反复分析付费；公众接口不显示。旧记录没有新版评估时不使用旧分数冒充新版评估。
+## 完整覆盖文件
 
-## 覆盖文件
+1. app/page.tsx
+2. app/api/public/[...path]/route.ts
+3. scripts/run-pipeline.ts
+4. lib/research/ai.ts
+5. lib/research/selection.ts
+6. lib/research/sports.ts
+7. lib/research/candidates.ts
+8. lib/research/network.ts
+9. lib/research/community.ts
+10. lib/research/community-sources.json
+11. lib/research/feeds.json
+12. .github/workflows/koreabrief-ingest.yml
+13. lib/research/youtube-community.ts
+14. lib/research/clustering.ts
+15. lib/research/event-matching.ts
 
-- app/page.tsx
-- app/api/public/[...path]/route.ts
-- scripts/run-pipeline.ts
-- lib/research/ai.ts
-- lib/research/selection.ts
-- lib/research/network.ts
-- lib/research/community.ts
-- lib/research/community-sources.json
-- lib/research/feeds.json
+普通用户没有新增配置负担；CSS、package.json、schema.ts、登录收藏、日报预留入口均不改。新增工作流是自动运行原采集脚本，不把采集逻辑搬到Vercel接口。
 
-未改动 CSS、package.json、部署配置、登录收藏、数据库表结构。新增“韩国舆情”导航与双分数/证据展示，沿用现有卡片样式。日报仍为预留入口。
+## 最省本地操作的上线顺序
 
-## 按这个顺序运行（原工程根目录 PowerShell）
-
-先覆盖文件，再检查：
-
-```powershell
-npm run pipeline -- --check
-```
-
-一次性重评近期旧数据（会使用现有 DeepSeek 额度，最多500次新闻评估；不删除旧数据）：
-
-```powershell
-npm run pipeline -- --reassess-existing --days=30 --limit=500
-```
-
-此命令读取数据库中的旧记录，不限于还在RSS里的文章。已有新版评估的记录自动跳过；超过批次时可重复运行。只有标题、没有原始片段的老记录会保持低把握度，不用旧AI摘要充当原始证据。
-
-再采集当前新闻并生成社区观察：
+1. 解压到现有工程根目录，覆盖全部同名文件。
+2. 按下面命令提交、推送这15个文件。
+3. 在GitHub仓库后台填写4项必需Secrets；详见AUTO-UPDATE.md。
+4. GitHub Actions → Korea Brief data update → Run workflow，首次选 check，检查通过后选 ingest。
+5. 等Vercel对应Production部署Ready，再刷新网站看新的体育内容。
+6. 此后每两小时自动采集，且每次最多补评40条近期旧数据，无需电脑开机。后续数据更新不需要反复部署。
 
 ```powershell
-npm run pipeline
-npm run build
-```
-
-默认最多300条新闻AI评估，按31个来源各3–8个候选采集，通常低于该上限。每个社区最多一次摘要调用；样本内容未变时复用摘要并更新热度。失败的来源不会取消已完成写入。
-日志 important/featured/not_selected 是本次成功处理的记录数，不是全站总数；failed_items/failed_sources 非零会以非零状态退出，但前面成功的记录已保留。
-
-提交所有9个文件（不要只提交旧版三个文件）：
-
-```powershell
-git --literal-pathspecs add -- "app/page.tsx" "app/api/public/[...path]/route.ts" "scripts/run-pipeline.ts" "lib/research/ai.ts" "lib/research/selection.ts" "lib/research/network.ts" "lib/research/community.ts" "lib/research/community-sources.json" "lib/research/feeds.json"
-git commit -m "Add importance and Korea relevance gates with community briefs"
+git --literal-pathspecs add -- "app/page.tsx" "app/api/public/[...path]/route.ts" "scripts/run-pipeline.ts" "lib/research/ai.ts" "lib/research/selection.ts" "lib/research/sports.ts" "lib/research/candidates.ts" "lib/research/network.ts" "lib/research/community.ts" "lib/research/community-sources.json" "lib/research/feeds.json" ".github/workflows/koreabrief-ingest.yml" "lib/research/youtube-community.ts" "lib/research/clustering.ts" "lib/research/event-matching.ts"
+git commit -m "Restore major news coverage and schedule cloud ingestion"
 git push
 ```
 
-确认 Vercel 对应提交的 Production 部署 Ready，再 Ctrl+F5 刷新。此次有代码变化，需要新部署；以后只采集新数据，无需为每次数据更新部署。采集仍由原有本地 pipeline 执行，没有新增定时任务；网站刷新不会触发付费采集。
+代码与工作流必须存在于GitHub默认分支；如果当前在功能分支，合并至默认分支后定时任务才会执行。
 
-## 韩国社区：实际可用范围
-
-1. Theqoo HOT：自动读取公开热门列表的标题、浏览数、评论数。当前页面未取得评论正文；摘要只描述话题和热度，不推测赞成/反对比例。只有图片、没有文本的内容不做图像猜测。
-2. GeekNews：自动读取官方 RSS 的技术/创业讨论摘要。RSS没有热度指标，明确标为“讨论样本”，不冒充全站热门。
-3. Naver Cafe：已经实现官方 API 适配器。仅在采集机根目录 .env 加入 NAVER_CLIENT_ID 和 NAVER_CLIENT_SECRET 后启用。未配置会跳过，不影响新闻和另外两个社区。官方接口是公开帖子关键词检索，不返回全站热榜或完整评论，不将“检索结果”称为“最热门”。
-4. Nate Pann、DC Inside、FM Korea、X：仅列为未启用的参考入口，没有假装已完成接入。Nate Pann当前对通用采集器的robots规则禁止抓取；其他来源尚无此工程已验证的接入方式，X还涉及官方授权/预算。
-
-Naver 凭据仅管理员在采集环境配置，不展示给普通用户，也不需要设置 NEXT_PUBLIC_ 前缀。官方申请入口：https://developers.naver.com/apps/#/register 。选择“搜索”API。
-
-```dotenv
-NAVER_CLIENT_ID=你的官方应用ClientID
-NAVER_CLIENT_SECRET=你的官方应用ClientSecret
-```
-
-以上为可选配置，数据库连接和现有 DeepSeek 配置不变。不向普通用户展示设置表单。
-
-只更新社区：
+## 如需现在先用本地补数据（可选）
 
 ```powershell
-npm run pipeline -- --community-only
+npm run pipeline -- --check
+npm run pipeline
+npm run pipeline -- --reassess-existing --days=30 --limit=300
+npm run pipeline -- --cluster-existing --days=30 --limit=300
+npm run build
 ```
 
-只更新新闻：
+不要每次自动运行 --reanalyze；普通采集/重评会跳过已完成的v2记录。重评会使用原DeepSeek额度；低价值格式筛除不调用AI。此前读取范围的594条待评估可由云端逐批处理，不要求一次本地跑完。
 
-```powershell
-npm run pipeline -- --skip-community
-```
+## 社区范围
 
-每个平台保存一份滚动更新的社区观察；更新时保留记录ID、刷新采样时间，目前不是每日历史档案。摘要附主题引用、采样数量和可用的真实热度，明确不代表全体韩国公众观点。当前不提供完整评论分析或跨平台情绪占比。
+- Theqoo HOT：公开热门标题、浏览和评论数；没有评论正文，不推测情绪。
+- GeekNews：官方RSS帖子摘要，没有热度指标，不称为全站热门。
+- Naver Cafe：官方公开帖子检索，需要管理员配置NAVER_CLIENT_ID与NAVER_CLIENT_SECRET；非全站热榜，缺配置自动跳过。
+- Nate Pann、DC Inside、FM Korea、X仍未自动接入，不能冒充已接入。
 
-## 已修正的错误处理
+其他细节见AUTO-UPDATE.md、SOURCE-CATALOG.md、VALIDATION.md。
 
-- 连接/响应超时、429、部分5xx有限重试；403/404不无限重试。
-- RSS DNS 错误明确写RSS，不再提示修改DATABASE_URL。
-- TimeoutError/AbortError（包括先前显示为23的情况）明确归类超时。
-- 写入后的REST校验失败，明确“写入已保留，校验未完成/不可见”，不把整轮采集说成全部失败。
-- 公开接口读取最多最近2000条记录后筛选，响应附 read_window；历史重评最多检查最近5000条。大规模历史数据需要以后另行分页优化。
+## 本次社区与报告阅读补充
 
-详见 SOURCE-CATALOG.md 和 VALIDATION.md。
+- 当前线上已有Theqoo与GeekNews观测；不是没有接入。
+- 增加YouTube韩国地区热门与公开评论抽样适配器，需要管理员设置YOUTUBE_API_KEY；未配置会明确跳过。每次最多20视频，前5个视频各8条relevance顶层评论，不代表评论者国籍或全民意见。
+- Theqoo只有标题时，不扩写为未经支持的产业趋势或公众态度；评论观点必须有实际样本及可核对摘录。
+- 增加最近最多30个每日摘要快照，从升级后开始积累，不恢复过去已覆盖的历史。原始评论文本不入库。
+- 补齐单条AI影响简报的阅读接口与按钮，明确是单一RSS片段分析草稿，取消默认“编辑已核验”。
+- 研究报告方法与建议选题见LOGIC-AND-RESEARCH.md；多来源周报/专题研究没有在本次自动实现。
+
+本次有代码更改，需要重新推送与部署；YouTube真实数据还需要官方API凭据。

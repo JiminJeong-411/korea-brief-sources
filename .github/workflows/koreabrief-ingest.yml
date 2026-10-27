@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'ingest=采集并补评少量旧数据；check=只检查；reassess=仅重评旧数据'
+        description: 'ingest=采集并补评少量旧数据；check=只检查；reassess=仅重评旧数据；cluster=聚合已有报道'
         required: true
         default: ingest
         type: choice
-        options: [ingest, check, reassess]
+        options: [ingest, check, reassess, cluster]
       limit:
         description: '本次新闻AI评估上限（1–500）'
         required: true
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$PIPELINE_WORKDIR/scripts/run-pipeline.ts" || { echo '找不到 scripts/run-pipeline.ts；核对仓库目录或 PIPELINE_WORKDIR 变量'; exit 1; }
-          [[ "$RUN_MODE" =~ ^(ingest|check|reassess)$ ]] || exit 1
+          [[ "$RUN_MODE" =~ ^(ingest|check|reassess|cluster)$ ]] || exit 1
           [[ "$ITEM_LIMIT" =~ ^[1-9][0-9]*$ ]] && (( ITEM_LIMIT <= 500 )) || { echo 'limit 必须为1–500'; exit 1; }
           [[ "$HISTORY_DAYS" =~ ^[1-9][0-9]*$ ]] && (( HISTORY_DAYS <= 30 )) || exit 1
           [[ "$BACKFILL_LIMIT" =~ ^(0|[1-9][0-9]*)$ ]] && (( BACKFILL_LIMIT <= 100 )) || exit 1
@@ -93,7 +93,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$PIPELINE_PROJECT"
-          if [[ "$RUN_MODE" == reassess ]]; then
+          if [[ "$RUN_MODE" == cluster ]]; then
+            node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --cluster-existing --days="$HISTORY_DAYS" --limit="$ITEM_LIMIT" --cluster-limit=120
+          elif [[ "$RUN_MODE" == reassess ]]; then
             node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --reassess-existing --days="$HISTORY_DAYS" --limit="$ITEM_LIMIT"
           else
             node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --limit="$ITEM_LIMIT"
@@ -110,6 +112,18 @@ jobs:
           set -euo pipefail
           cd "$PIPELINE_PROJECT"
           node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --reassess-existing --days=30 --limit="$BACKFILL_LIMIT"
+      - name: Gradually cluster existing news
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' && env.RUN_MODE == 'ingest' }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -euo pipefail
+          cd "$PIPELINE_PROJECT"
+          node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --cluster-existing --days=30 --limit=60 --cluster-limit=120
       - name: Run summary
         if: always()
         shell: bash

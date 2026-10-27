@@ -1,7 +1,8 @@
+import {readEventFacts,type EventFacts} from './clustering';
 import {validateIntelligence, type Intelligence} from './selection';
 import {retry} from './network';
 interface AnalysisResult {
-  score:number; region:string; strategicReport:string; titleZh:string; summaryZh:string; intelligence:Intelligence;
+  score:number; region:string; strategicReport:string; titleZh:string; summaryZh:string; intelligence:Intelligence; eventFacts?:EventFacts;
 }
 const VALID_REGIONS=['东亚','东南亚','欧洲','北美','南美','非洲','大洋洲','中东','全球/其它'];
 export async function requestJSON(prompt:string):Promise<any>{
@@ -31,11 +32,12 @@ category 仅 economy/politics/society/entertainment/technology/sports。给最�
 importanceEvidence 和 koreaEvidence 必须逐字摘自原始标题或摘要，各8–160字符（不超过20个英文词）；没有证据用空字符串。不得引用你自己写的中文分析作为证据。confidence 为 low/medium，只有标题时必须 low。不编造公司或扩展原始摘要。
 region 只根据事件地点/直接涉事市场多选：${VALID_REGIONS.join('、')}，用顿号分隔；分析面向韩国不等于事件发生在东亚。
 titleZh 忠实翻译；summaryZh <=180中文字，仅原始资料事实。只有标题时明确信息有限。strategicReport 仅在 importance>=60、korea>=70 且有摘要时写<=600中文字，分“原文事实/条件性传导/机会与风险/待核实事项”，否则空字符串。不得声称人工核验。
-JSON格式：{"importance":0,"korea":0,"scope":"none","category":"economy","confidence":"low","importanceReason":"","importanceEvidence":"","koreaReason":"","koreaEvidence":"","mechanism":"","industries":[],"region":"全球/其它","titleZh":"","summaryZh":"","strategicReport":""}
+eventFacts用于同事件聚合：subjects为稳定英文实体名数组；action为具体动作及阶段的英文短语；object为具体对象；date仅在资料明确事件日期时填YYYY-MM-DD，否则空字符串。同一主体的不同决策、提案与通过、男女奖项应可区分。
+JSON格式：{"importance":0,"korea":0,"scope":"none","category":"economy","confidence":"low","importanceReason":"","importanceEvidence":"","koreaReason":"","koreaEvidence":"","mechanism":"","industries":[],"region":"全球/其它","titleZh":"","summaryZh":"","strategicReport":"","eventFacts":{"subjects":[],"action":"","object":"","date":""}}
 资料：${JSON.stringify({title,sourceCategory:category,excerpt})}`);
   const intelligence=validateIntelligence(raw,evidence,excerpt.trim().length>=80,{title});
   const regions=String(raw.region||'').split(/[、,，|]/).map(s=>s.trim()).filter(s=>VALID_REGIONS.includes(s));
-  return {score:Math.max(1,intelligence.korea/10),intelligence,region:[...new Set(regions)].join('、')||'全球/其它',
+  return {score:Math.max(1,intelligence.korea/10),intelligence,eventFacts:readEventFacts(raw.eventFacts),region:[...new Set(regions)].join('、')||'全球/其它',
     titleZh:typeof raw.titleZh==='string'&&raw.titleZh.trim()?raw.titleZh.trim():title,
     summaryZh:typeof raw.summaryZh==='string'?raw.summaryZh.trim().slice(0,700):excerpt.slice(0,300),
     strategicReport:intelligence.importance>=60&&intelligence.korea>=70&&intelligence.confidence!=='low'&&typeof raw.strategicReport==='string'?raw.strategicReport.slice(0,2000):''};

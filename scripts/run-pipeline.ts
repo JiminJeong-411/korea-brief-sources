@@ -1,5 +1,7 @@
+import {readEvent,type ClusterArticle} from '../lib/research/clustering';
+import {singleEvent,describeEvent,findMatchingEvent} from '../lib/research/event-matching';
 import {chooseCandidates,fairCandidateQueue} from '../lib/research/candidates';
-import {keepSportsNews,majorSportsMilestone,sportsEventKey} from '../lib/research/sports';
+import {keepSportsNews,majorSportsMilestone} from '../lib/research/sports';
 import "dotenv/config";
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
@@ -92,15 +94,6 @@ function cleanArticleUrl(value: unknown): string {
     if(url.pathname!=='/')url.pathname=url.pathname.replace(/\/+$/,'');url.searchParams.sort();return url.toString();
   } catch {return '';}
 }
-function headlineKeys(...values: unknown[]): string[] {
-  return [...new Set(values.map(x=>plainText(x).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'')).filter(x=>x.length>=12))];
-}
-function duplicateInBatch(url: string, titles: string[], date: number, seenUrls: Set<string>, seenTitles: Map<string,number[]>): boolean {
-  const key=url.replace(/^(https?:\/\/)(?:www\.)/i,'$1');
-  const duplicate=seenUrls.has(key)||Number.isFinite(date)&&titles.some(t=>(seenTitles.get(t)||[]).some(old=>Math.abs(old-date)<=86400000));
-  seenUrls.add(key);if(Number.isFinite(date))for(const title of titles)seenTitles.set(title,[...(seenTitles.get(title)||[]),date]);
-  return duplicate;
-}
 const keepSports=keepSportsNews;
 
 // Keep the original PostgreSQL / Supabase REST / DeepSeek architecture and table.
@@ -112,6 +105,9 @@ const parser=new Parser();
 const checkOnly=process.argv.includes('--check');
 const reanalyze=process.argv.includes('--reanalyze');
 const backfill=process.argv.includes('--reassess-existing');
+const clusterOnly=process.argv.includes('--cluster-existing');
+const clusterFlag=process.argv.find(s=>s.startsWith('--cluster-limit='));
+const clusterLimit=clusterFlag?Number(clusterFlag.split('=')[1]):120;
 const communityOnly=process.argv.includes('--community-only');
 const skipCommunity=process.argv.includes('--skip-community');
 const flag=process.argv.find(s=>s.startsWith('--limit='));
@@ -126,6 +122,7 @@ async function fetchPublic(url:string){
 }
 async function preflight(): Promise<Set<string>> {
   if(!process.env.DATABASE_URL)throw new Error('未配置 DATABASE_URL；请在原项目根目录使用原来的 .env 运行。');
+  if(!Number.isInteger(clusterLimit)||clusterLimit<0||clusterLimit>1000)throw Error('--cluster-limit 必须是0–1000');
   if(!Number.isInteger(itemLimit)||itemLimit<1)throw new Error('--limit 必须是正整数');
   if(!Number.isInteger(backfillDays)||backfillDays<1||backfillDays>365)throw Error('--days 必须是1–365');
   const webUrl=process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/,'');
@@ -168,15 +165,21 @@ export async function executePipeline(){
   if(!Array.isArray(all))throw Error('feeds.json 格式错误');
   const feeds=all.filter((f:any)=>f.enabled!==false&&f.ingest!=='reference'&&!f.replaced_by&&f.url);
   const previous=await db.execute(sql`SELECT * FROM public.english_hot_news ORDER BY id DESC LIMIT 5000`);
-  const existingByUrl=new Map<string,any>(),seenUrls=new Set<string>(),seenTitles=new Map<string,number[]>();
+  const existingByUrl=new Map<string,any>();
+  const clusterBudget={remaining:clusterLimit};
+  const eventRows=new Map<any,ClusterArticle>();
+  function asArticle(r:any):ClusterArticle|null{
+    const sources=parseSources(r.cluster_urls),primary=sources.find(x=>cleanArticleUrl(x.url)===cleanArticleUrl(r.raw_url))||sources[0];
+    if(primary?.content_type==='community_digest')return null;
+    return {id:r.id,url:r.raw_url,title:r.translated_title||r.raw_title,originalTitle:r.raw_title,excerpt:primary?.excerpt||'',date:primary?.published_at||r.created_at||'',category:primary?.intelligence?.category||normalizeCategory(r.assigned_category),event:readEvent(primary?.event)};
+  }
   const keyOf=(url:string)=>url.replace(/^(https?:\/\/)(?:www\.)/i,'$1');
   for(const r of previous.rows as any[]){
     const u=cleanArticleUrl(r.raw_url);if(!u)continue;
     if(!existingByUrl.has(keyOf(u)))existingByUrl.set(keyOf(u),r);
-    const primary=parseSources(r.cluster_urls)[0];
-    if(primary?.content_type!=='community_digest')duplicateInBatch(u,headlineKeys(r.raw_title,r.translated_title),Date.parse(primary?.published_at||r.created_at||''),seenUrls,seenTitles);
+    const article=asArticle(r);if(article)eventRows.set(r.id,article);
   }
-  const counts={fetched:0,inserted:0,updated:0,duplicates:0,filtered_noise:0,filtered_sports:0,important:0,featured:0,not_selected:0,failed_sources:0,failed_items:0,community_updated:0,community_unconfigured:0};
+  const counts={fetched:0,inserted:0,updated:0,duplicates:0,filtered_noise:0,filtered_sports:0,important:0,featured:0,not_selected:0,failed_sources:0,failed_items:0,community_updated:0,community_unconfigured:0,events_linked:0,cluster_updated:0,cluster_failed:0};
   let analyzed=0;const verifyIds:any[]=[];const attempted=new Set<string>();
   async function processItem(item:any,feed:any,old?:any){
     if(analyzed>=itemLimit)return;
@@ -204,13 +207,18 @@ export async function executePipeline(){
         }
         return;
       }
-      if(!existing&&duplicateInBatch(url,headlineKeys(title),Number.isFinite(timestamp)?timestamp:Date.now(),seenUrls,seenTitles)){counts.duplicates++;return;}
       analyzed++;stage='DeepSeek 新闻评估';
       const analysis=await evaluateGeopoliticalRisk(title,CATEGORY_LABELS[seed],excerpt);
       const category=analysis.intelligence.category;
       const regions=getValidRegionIds(analysis.region,title+' '+excerpt);
       const names:Record<string,string>={'east-asia':'东亚','southeast-asia':'东南亚',europe:'欧洲','north-america':'北美','south-america':'南美',africa:'非洲',oceania:'大洋洲','middle-east':'中东'};
-      const primary={source:feed.name||new URL(url).hostname,url,title,excerpt,published_at:publishedAt,regions,
+      let event=singleEvent(url,analysis.eventFacts);
+      const article:ClusterArticle={id:existing?.id||url,url,title:analysis.titleZh,originalTitle:title,excerpt,date:publishedAt||new Date().toISOString(),category,event};
+      if(isImportant(analysis.intelligence)){
+        try{event=await findMatchingEvent(article,[...eventRows.values()],clusterBudget);}catch(e){counts.cluster_failed++;console.warn(describeError(e,'事件聚合；新闻仍将保存，下轮重试'));}
+      }else event.checked=true;
+      if(event.anchorUrl!==singleEvent(url).anchorUrl)counts.events_linked++;
+      const primary={event,source:feed.name||new URL(url).hostname,url,title,excerpt,published_at:publishedAt,regions,
         analysis_version:VERSION,score_scale:10,content_type:'news',source_country:feed.country||'',intelligence:analysis.intelligence};
       const values:Record<string,any>={raw_title:title,translated_title:analysis.titleZh,raw_url:existing?.raw_url||url,
         source_site:feed.name||new URL(url).hostname,assigned_category:CATEGORY_LABELS[category],ai_score:analysis.score,
@@ -224,11 +232,30 @@ export async function executePipeline(){
         if(existing)counts.updated++;else counts.inserted++;
         if(isImportant(analysis.intelligence))counts.important++;else counts.not_selected++;
         if(isFeatured(analysis.intelligence))counts.featured++;
-        verifyIds.push(id);existingByUrl.set(key,{...values,id,created_at:existing?.created_at||new Date().toISOString()});
+        verifyIds.push(id);const saved={...values,id,created_at:existing?.created_at||new Date().toISOString()};existingByUrl.set(key,saved);const savedArticle=asArticle(saved);if(savedArticle)eventRows.set(id,savedArticle);
       }else counts.duplicates++;
     }catch(e){counts.failed_items++;console.warn(`条目失败：${title.slice(0,55)}；${describeError(e,stage)}`);}
   }
-  if(backfill&&!communityOnly){
+  if(clusterOnly){
+    const cutoff=Date.now()-backfillDays*86400000;
+    const candidates=[...previous.rows as any[]].filter(r=>{
+      const article=asArticle(r);return article&&Date.parse(article.date)>=cutoff&&(!article.event?.checked)&&parseSources(r.cluster_urls).some(s=>s.intelligence);
+    }).sort((a,b)=>Number(a.id)-Number(b.id)).slice(0,itemLimit);
+    console.log(`历史事件聚合：${candidates.length} 条待处理；AI调用上限 ${clusterLimit}；保留每篇原文，不删库。`);
+    for(const row of candidates){
+      if(clusterBudget.remaining<=0){console.log('事件聚合AI预算已用完；未处理记录留待下轮，不标记已完成。');break;}
+      const article=asArticle(row)!;
+      try{
+        let own=article.event||singleEvent(article.url);
+        if(!own.facts&&clusterBudget.remaining>0){clusterBudget.remaining--;own={...own,facts:await describeEvent(article)};}
+        const event=await findMatchingEvent({...article,event:own},[...eventRows.values()],clusterBudget);
+        const sources=parseSources(row.cluster_urls),index=Math.max(0,sources.findIndex(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row.raw_url)));
+        sources[index]={...(sources[index]||{}),event};
+        const id=await writeRecord(row,{cluster_urls:JSON.stringify(sources)});
+        if(id!==undefined){counts.cluster_updated++;verifyIds.push(id);eventRows.set(id,{...article,event});if(event.anchorUrl!==singleEvent(article.url).anchorUrl)counts.events_linked++;}
+      }catch(e){counts.cluster_failed++;console.warn(describeError(e,'历史事件聚合'));}
+    }
+  }else if(backfill&&!communityOnly){
     const cutoff=new Date(Date.now()-backfillDays*86400000).toISOString();
     // Reassessment reads actual stored rows, rather than only items still in RSS.
     const rows=await db.execute(sql`SELECT * FROM public.english_hot_news WHERE created_at >= ${cutoff} ORDER BY id DESC LIMIT 5000`);
@@ -262,7 +289,7 @@ export async function executePipeline(){
     for(const {feed,item} of queue){if(analyzed>=itemLimit)break;await processItem(item,feed);}
   }
 
-  if(!backfill&&!skipCommunity){
+  if(!backfill&&!clusterOnly&&!skipCommunity){
     const sources=JSON.parse(fs.readFileSync(path.resolve(process.cwd(),'lib/research/community-sources.json'),'utf8'));
     for(const source of sources.filter((s:any)=>s.enabled&&s.adapter!=='reference')){
       try{
@@ -286,7 +313,7 @@ export async function executePipeline(){
       }catch(e:any){if(e.code==='NOT_CONFIGURED'){counts.community_unconfigured++;console.log(e.message);}else{counts.failed_sources++;console.warn(describeError(e,`社区 ${source.name}`));}}
     }
   }
-  console.log('实际处理结果：'+JSON.stringify(counts));
+  console.log('实际处理结果：'+JSON.stringify({...counts,cluster_ai_calls:clusterLimit-clusterBudget.remaining}));
   if(verifyIds.length){
     try{
       const ids=[...new Set([verifyIds[0],verifyIds[verifyIds.length-1]])];
@@ -295,7 +322,7 @@ export async function executePipeline(){
       console.log('公开读取抽查通过：本轮首尾写入记录可被网站身份读取。数据更新无需部署；代码更改需部署。');
     }catch(e){process.exitCode=1;console.warn(describeError(e,'写入后公开 REST 校验')+'；本轮写入已保留，不代表全部采集失败。');}
   }
-  if(counts.failed_items||counts.failed_sources){process.exitCode=1;console.log('本轮部分完成；失败项可重试，已写入的新版本新闻会自动跳过。');}
+  if(counts.failed_items||counts.failed_sources||counts.cluster_failed){process.exitCode=1;console.log('本轮部分完成；失败项可重试，已写入的新版本新闻会自动跳过。');}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   executePipeline().catch(e=>{console.error(describeError(e,'采集任务'));process.exitCode=1;}).finally(()=>pool.end());
