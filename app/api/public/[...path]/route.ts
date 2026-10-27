@@ -1,3 +1,4 @@
+import {keepSportsNews,majorSportsMilestone,sportsEventKey} from '../../../../lib/research/sports';
 import communityCatalog from '../../../../lib/research/community-sources.json';
 import {readIntelligence,isImportant,isFeatured,isHot,THRESHOLDS,SELECTION_VERSION} from '../../../../lib/research/selection';
 import {retry} from '../../../../lib/research/network';
@@ -45,6 +46,7 @@ const CATEGORY_TERMS: Record<string, RegExp> = {
   society: /社会|教育|医疗|学校|医院|地震|台风|洪水|移民|犯罪|警方|住房|福利|罢工|人口|交通|\b(?:society|education|health|hospitals?|schools?|earthquake|typhoon|floods?|migration|crime|police|housing|welfare|strike|population)\b/gi
 };
 function classifyCategory(title: string, summary: string, sourceCategory: unknown): string {
+  if(majorSportsMilestone(title,summary))return 'sports';
   const seed=normalizeCategory(sourceCategory), scores: Record<string,number>={};
   for(const id of Object.keys(CATEGORY_LABELS)) {
     const re=CATEGORY_TERMS[id];
@@ -89,16 +91,7 @@ function duplicateInBatch(url: string, titles: string[], date: number, seenUrls:
   seenUrls.add(key);if(Number.isFinite(date))for(const title of titles)seenTitles.set(title,[...(seenTitles.get(title)||[]),date]);
   return duplicate;
 }
-function keepSports(category: string, title: string, excerpt: string): boolean {
-  if(category!=='sports')return true;
-  const headline=plainText(title),body=plainText(excerpt),text=headline+' '+body;
-  // 韩国参与依据原始新闻内容，不使用模板化“可能影响韩国”来批准本地赛况。
-  if(/韩国|朝鲜|韩籍|韩裔|孙兴慜|金玟哉|李刚仁|李政厚|金河成|金惠成|柳贤振|한국|손흥민|\b(?:korea|korean|k-?league|kbo|son heung[- ]min|heung[- ]min son|kim min[- ]jae|lee kang[- ]in|jung[- ]hoo lee|ha[- ]seong kim|hye[- ]seong kim|samsung|hyundai|kia motors)\b/i.test(headline))return true;
-  if(/韩国.{0,12}(?:球员|运动员|球队|国家队)|\bkorean (?:player|athlete|team|guard|pitcher)\b|\b(?:son heung[- ]min|jung[- ]hoo lee)\b/i.test(body))return true;
-  if(/奥运|残奥|世界杯|亚运|世锦赛|世界锦标赛|欧冠|大满贯|温网|澳网|法网|美网|\b(?:olympics?|paralympics?|world cup|asian games|world championships?|champions league|grand slam|wimbledon|australian open|roland garros|us open|formula (?:one|1)|f1)\b/i.test(text))return true;
-  if(/\b(?:global|international|cross-border|overseas|worldwide)\b[\s\S]{0,90}\b(?:broadcast|streaming|media rights|tv rights|sponsor|investment|acquisition|expansion)|\b(?:broadcast|streaming|media rights|tv rights|sponsor|investment|acquisition|expansion)[\s\S]{0,90}\b(?:global|international|cross-border|overseas|worldwide)\b|全球转播|国际转播|海外版权|跨境投资|全球赞助|国际赞助|跨国并购/i.test(text))return true;
-  return false;
-}
+const keepSports=keepSportsNews;
 
 function sourceArticles(value: unknown): any[] {
   if(typeof value==='string'){try{value=JSON.parse(value);}catch{return [];}}
@@ -122,7 +115,7 @@ export async function GET(request: Request) {
       status_label:'核心新闻源 · '+(f.purpose||'通过重要性与韩国关联两层筛选')
     }));
     const communities=communityCatalog.map((f:any)=>({id:f.id,name:f.name,homepage:f.homepage,country:'韩国',region:'east-asia',type:f.source_type||'社区参考',
-      status_label:(f.enabled?(f.adapter==='naver'?'需要管理员配置 Naver API · ':'已配置采集 · '):'未启用 · ')+f.scope}));
+      status_label:(f.enabled?(f.adapter==='naver'?'需要管理员配置 Naver API · ':f.adapter==='youtube'?'需要管理员配置 YouTube Data API · ':'已配置采集 · '):'未启用 · ')+f.scope}));
     return Response.json({sources:[...newsSources,...communities]}, {headers:{'Cache-Control':'no-store'}});
   }
   if (url.pathname.endsWith('/data')) return Response.json({});
@@ -151,6 +144,8 @@ export async function GET(request: Request) {
     const rawRecords:any[]=[];
     const pageLimit=500;
     const params=new URLSearchParams({select:'*',order:'id.desc',limit:String(pageLimit)});
+    const briefRequest=url.pathname.endsWith('/brief');
+    if(briefRequest){const id=url.searchParams.get('id')||'';if(!/^[1-9]\d*$/.test(id))return Response.json({error:'INVALID_REPORT_ID'},{status:400});params.set('id','eq.'+id);params.set('limit','1');}
     if(modeParam==='community'){
       params.set('raw_url','in.('+communityCatalog.filter(s=>s.enabled).map(s=>JSON.stringify(s.homepage)).join(',')+')');
     }
@@ -166,13 +161,26 @@ export async function GET(request: Request) {
       if(!Array.isArray(rows))throw Error('NEWS_RESPONSE_INVALID');
       rawRecords.push(...rows);if(rows.length<pageLimit)break;
     }
+    if(briefRequest){
+      const row=rawRecords[0],primary=sourceArticles(row?.cluster_urls).find(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row?.raw_url))||sourceArticles(row?.cluster_urls)[0];
+      const assessment=readIntelligence(primary?.intelligence,plainText(row?.raw_title)+' '+plainText(primary?.excerpt),{title:plainText(row?.raw_title)});
+      if(!row?.deep_report||!isFeatured(assessment))return Response.json({error:'REPORT_UNAVAILABLE'},{status:404,headers:{'Cache-Control':'no-store'}});
+      const date=primary?.published_at||row.created_at||'';
+      return Response.json({id:row.id,type:'brief',state:'ai_draft',report_kind:'single_news_impact_note',editorial_verified:false,
+        title:plainText(row.translated_title||row.raw_title),date,summary:plainText(row.ai_summary),
+        sources:[{ref:'1',title:plainText(row.raw_title),url:row.raw_url,source:row.source_site,published_at:date,content_kind:'rss_excerpt'}],
+        body:{facts:[{text:plainText(primary?.excerpt).slice(0,800)||'原始片段不足，需阅读原文核对。',citations:['1']}],
+          analysis:[{text:String(row.deep_report).slice(0,6000),citations:['1']}],strategic_implications:[],alternatives:['尚未完成多来源比较和替代解释检验。'],
+          limitations:['这是基于单条订阅片段的AI影响简报草稿，不是多来源专题研究或事实核查。','未声称阅读全文或经过人工核验；分析中的传导机制属于条件性判断。'],
+          next_steps:['核对原文和一手公告。','补充不同来源与相反证据，再形成人工审阅的研究报告。']}}, {headers:{'Cache-Control':'no-store'}});
+    }
     if(modeParam==='community'){
       const days=Number(url.searchParams.get('days')||7),q=qParam.toLowerCase();
       const seen=new Set<string>();
       const items=rawRecords.flatMap(r=>{
         const primary=sourceArticles(r.cluster_urls).find(x=>x.content_type==='community_digest');
         const c=primary?.community;
-        if(!c||c.version!=='community-20261027-v1'||!Array.isArray(c.themes)||!c.themes.length||seen.has(r.raw_url))return [];
+        if(!c||!['community-20261027-v1','community-20261027-v2'].includes(c.version)||!Array.isArray(c.themes)||(!c.themes.length&&!c.history?.length)||seen.has(r.raw_url))return [];
         seen.add(r.raw_url);
         const age=Date.now()-Date.parse(c.observedAt);
         if(!Number.isFinite(age)||age < -3600000||([1,7,30].includes(days)&&age>days*86400000))return [];
@@ -181,12 +189,13 @@ export async function GET(request: Request) {
       }).sort((a,b)=>b.date.localeCompare(a.date));
       return Response.json({...safeFallback,success:true,items,news:[],total:items.length,counts:{news:0,assessed:0,reports:0},selection_version:SELECTION_VERSION}, {headers:{'Cache-Control':'no-store'}});
     }
-    let pendingAssessment=0;
+    let pendingAssessment=0,belowImportance=0,sportsExcluded=0,needsReassessment=0;
 
 
     const formattedRecords: any[] = [];
     const seenUrls = new Set<string>();
     const seenTitles = new Map<string, number[]>();
+    const seenSportsEvents=new Map<string,number>();
     for (const r of rawRecords) {
       const title = plainText(r.translated_title || r.raw_title);
       const articleUrl = cleanArticleUrl(r.raw_url);
@@ -195,16 +204,20 @@ export async function GET(request: Request) {
       const linkedSources = sourceArticles(r.cluster_urls);
       const primary = linkedSources.find(x=>cleanArticleUrl(x.url)===articleUrl) || linkedSources[0];
       if(primary?.content_type==='community_digest')continue;
+      if(primary?.screening?.version===SELECTION_VERSION&&primary?.screening?.eligible===false){belowImportance++;continue;}
       const evidenceText = plainText(primary?.excerpt || r.original_excerpt || '');
-      const assessment=readIntelligence(primary?.intelligence,plainText(r.raw_title)+' '+evidenceText);
+      const assessment=readIntelligence(primary?.intelligence,plainText(r.raw_title)+' '+evidenceText,{title:plainText(r.raw_title)});
+      if(primary?.intelligence?.version!==SELECTION_VERSION)needsReassessment++;
       if(!assessment){pendingAssessment++;continue;}
-      if(!isImportant(assessment))continue;
+      if(!isImportant(assessment)){belowImportance++;continue;}
       const headline = [...new Set([plainText(r.raw_title),title])].filter(Boolean).join(' ');
       const category = assessment.category;
-      if (!keepSports(category, headline, evidenceText)) continue;
+      if (!keepSports(category, headline, evidenceText)){sportsExcluded++;continue;}
       const dateCandidate = r.published_at || primary?.published_at || r.created_at || '';
       const date = Number.isFinite(Date.parse(dateCandidate)) ? new Date(dateCandidate).toISOString() : '';
       if (duplicateInBatch(articleUrl, headlineKeys(title, r.raw_title), Date.parse(date), seenUrls, seenTitles)) continue;
+      const eventKey=sportsEventKey(plainText(r.raw_title),evidenceText,date);
+      if(eventKey&&Number.isFinite(Date.parse(date))){const old=seenSportsEvents.get(eventKey);if(old!==undefined&&Math.abs(old-Date.parse(date))<2*86400000)continue;seenSportsEvents.set(eventKey,Date.parse(date));}
       const mappedRegions = getValidRegionIds(r.region || primary?.regions, headline + ' ' + evidenceText);
       const numericScore = assessment.korea;
       const assessed = numericScore !== null;
@@ -226,7 +239,7 @@ export async function GET(request: Request) {
         ai_assisted: !!r.ai_summary || !!r.translated_title,
         content_kind: 'rss_excerpt',
         intelligence: assessment,
-        hasReport: !!r.deep_report,
+        hasReport: !!r.deep_report && isFeatured(assessment),
         relevance: assessed ? {
           score: numericScore,
           reason: assessment.koreaReason,
@@ -284,6 +297,7 @@ export async function GET(request: Request) {
       selection_version: SELECTION_VERSION,
       pending_assessment: pendingAssessment,
       read_window: rawRecords.length,
+      coverage:{pending:pendingAssessment,needs_reassessment:needsReassessment,below_importance:belowImportance,sports_excluded:sportsExcluded,categories:Object.fromEntries(Object.keys(CATEGORY_LABELS).map(id=>[id,windowRecords.filter(r=>r.category===id).length]))},
       regions: regionCounts,
       total: finalRecords.length,
       page,

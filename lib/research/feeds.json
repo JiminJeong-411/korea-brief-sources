@@ -13,7 +13,7 @@
       "https://feeds.yonhapnews.co.kr/feed/politics.xml"
     ],
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.yna.co.kr",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -31,7 +31,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 8
+    "max_items": 12
   },
   {
     "id": "ko-002",
@@ -164,7 +164,7 @@
     "country": "韩国",
     "source_type": "新闻媒体",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.mk.co.kr",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -182,7 +182,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 8
+    "max_items": 12
   },
   {
     "id": "ko-007",
@@ -349,7 +349,7 @@
     "country": "韩国",
     "source_type": "新闻媒体",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://platum.kr",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -367,7 +367,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 8
+    "max_items": 12
   },
   {
     "id": "ko-013",
@@ -380,7 +380,7 @@
     "country": "韩国",
     "source_type": "新闻媒体",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://rss.etnews.com",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -398,7 +398,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 8
+    "max_items": 12
   },
   {
     "id": "ko-014",
@@ -1512,7 +1512,7 @@
     "category": "经济",
     "enabled": true,
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://search.cnbc.com",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -1532,7 +1532,7 @@
     "availability": "configured",
     "coverage_region": "north-america",
     "country": "美国",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "en-053",
@@ -1596,7 +1596,7 @@
     "category": "经济",
     "enabled": true,
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.ft.com",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -1616,7 +1616,7 @@
     "availability": "configured",
     "coverage_region": "europe",
     "country": "英国",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "en-056",
@@ -1626,7 +1626,7 @@
     "category": "科技",
     "enabled": true,
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://techcrunch.com",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -1646,7 +1646,7 @@
     "availability": "configured",
     "coverage_region": "north-america",
     "country": "美国",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "en-057",
@@ -1903,11 +1903,11 @@
     "url": "https://variety.com/feed/",
     "language": "en",
     "category": "娱乐",
-    "enabled": false,
+    "enabled": true,
     "ingest": "rss",
-    "catalog_revision": "2026-10-22-sources-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://variety.com",
-    "purpose": "区域新闻、经济与社会变化；结合原文识别韩国企业的潜在影响。",
+    "purpose": "文化作品、主要奖项与娱乐产业重大变化；不把普通八卦作为重点新闻。",
     "priority": 1,
     "validation": {
       "checked_at": "2026-10-21T20:20:44.376Z",
@@ -1923,7 +1923,8 @@
       "environment": "verification-host-node"
     },
     "availability": "active",
-    "disabled_reason": "收束来源：重复覆盖、地方杂讯或泛娱乐/本地体育；保留目录待需要时启用"
+    "disabled_reason": "收束来源：重复覆盖、地方杂讯或泛娱乐/本地体育；保留目录待需要时启用",
+    "max_items": 12
   },
   {
     "id": "en-067",
@@ -2237,7 +2238,7 @@
     "verification": "待运行检测",
     "homepage": "https://www.channelnewsasia.com/",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2254,7 +2255,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-antara",
@@ -2272,7 +2273,7 @@
       "https://en.antaranews.com/rss/latest-news.xml"
     ],
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2289,7 +2290,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-dw",
@@ -2304,7 +2305,7 @@
     "verification": "待运行检测",
     "homepage": "https://www.dw.com/",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2321,7 +2322,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-france24",
@@ -2431,7 +2432,7 @@
     "verification": "待运行检测",
     "homepage": "https://agenciabrasil.ebc.com.br/",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2448,7 +2449,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-mercopress",
@@ -2463,7 +2464,7 @@
     "verification": "待运行检测",
     "homepage": "https://en.mercopress.com/",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2480,7 +2481,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-africanews",
@@ -2495,7 +2496,7 @@
     "verification": "待运行检测",
     "homepage": "https://www.africanews.com/",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2512,7 +2513,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-allafrica",
@@ -2622,7 +2623,7 @@
     "verification": "待运行检测",
     "homepage": "https://www.aljazeera.com/",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2639,7 +2640,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "region-arabnews",
@@ -2686,7 +2687,7 @@
     "verification": "待运行检测",
     "homepage": "https://www.bbc.com/news",
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
     "validation": {
@@ -2703,7 +2704,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "kr-herald-business",
@@ -2717,7 +2718,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.koreaherald.com",
     "priority": 1,
     "validation": {
@@ -2734,7 +2735,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "kr-herald-kpop",
@@ -2843,7 +2844,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://e.vnexpress.net",
     "priority": 1,
     "validation": {
@@ -2860,7 +2861,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "sea-vietnamnews-economy",
@@ -2997,7 +2998,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.businesstimes.com.sg",
     "priority": 1,
     "validation": {
@@ -3014,7 +3015,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "eu-guardian-business",
@@ -3059,7 +3060,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.ecb.europa.eu",
     "priority": 1,
     "validation": {
@@ -3076,7 +3077,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "eu-council-press",
@@ -3093,7 +3094,7 @@
     "previous_urls": [
       "https://www.consilium.europa.eu/en/press/press-releases/rss/"
     ],
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.consilium.europa.eu",
     "priority": 1,
     "validation": {
@@ -3110,7 +3111,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "eu-eurostat",
@@ -3154,7 +3155,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.federalreserve.gov",
     "priority": 1,
     "validation": {
@@ -3171,7 +3172,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "na-ftc",
@@ -3299,7 +3300,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.dailymaverick.co.za",
     "priority": 1,
     "validation": {
@@ -3316,7 +3317,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "af-cnbc",
@@ -3390,7 +3391,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.rnz.co.nz",
     "priority": 1,
     "validation": {
@@ -3407,7 +3408,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "oc-guardian-australia",
@@ -3421,7 +3422,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.theguardian.com",
     "priority": 1,
     "validation": {
@@ -3438,7 +3439,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "oc-rba",
@@ -3542,7 +3543,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.thenationalnews.com",
     "priority": 1,
     "validation": {
@@ -3559,7 +3560,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "industry-music-business",
@@ -3573,7 +3574,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.musicbusinessworldwide.com",
     "priority": 1,
     "validation": {
@@ -3590,7 +3591,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "industry-digital-music",
@@ -3666,7 +3667,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.gamesindustry.biz",
     "priority": 1,
     "validation": {
@@ -3683,7 +3684,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "company-samsung",
@@ -3697,7 +3698,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "企业一手公告（利益相关方来源），不视为独立验证；普通促销不收录。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://news.samsung.com",
     "priority": 1,
     "validation": {
@@ -3728,7 +3729,7 @@
     "enabled": true,
     "ingest": "rss",
     "purpose": "企业一手公告（利益相关方来源），不视为独立验证；普通促销不收录。",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://news.skhynix.com",
     "priority": 1,
     "validation": {
@@ -3850,7 +3851,7 @@
     "source_type": "新闻媒体",
     "enabled": true,
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://mainichi.jp",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -3868,7 +3869,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "ea-nippon",
@@ -3881,7 +3882,7 @@
     "source_type": "新闻媒体",
     "enabled": true,
     "ingest": "rss",
-    "catalog_revision": "2026-10-27-curated-1",
+    "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.nippon.com",
     "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
     "priority": 1,
@@ -3899,7 +3900,7 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 6
+    "max_items": 12
   },
   {
     "id": "ea-hkfp",
@@ -3999,5 +4000,69 @@
     "purpose": "核对贸易、数字市场、竞争与监管政策原件；当前为资料入口。",
     "validation": null,
     "catalog_revision": "2026-10-22-sources-1"
+  },
+  {
+    "id": "sports-bbc",
+    "name": "BBC Sport",
+    "url": "https://feeds.bbci.co.uk/sport/rss.xml?edition=int",
+    "homepage": "https://www.bbc.com/sport",
+    "country": "英国",
+    "language": "en",
+    "category": "体育",
+    "source_type": "新闻媒体",
+    "enabled": true,
+    "ingest": "rss",
+    "coverage_region": "other",
+    "max_items": 24,
+    "catalog_revision": "2026-10-27-coverage-2",
+    "purpose": "重大赛事/奖项正式结果、国际体育与韩国体育"
+  },
+  {
+    "id": "sports-guardian",
+    "name": "The Guardian · 体育",
+    "url": "https://www.theguardian.com/sport/rss",
+    "homepage": "https://www.theguardian.com/sport",
+    "country": "英国",
+    "language": "en",
+    "category": "体育",
+    "source_type": "新闻媒体",
+    "enabled": true,
+    "ingest": "rss",
+    "coverage_region": "other",
+    "max_items": 24,
+    "catalog_revision": "2026-10-27-coverage-2",
+    "purpose": "重大赛事/奖项正式结果、国际体育与韩国体育"
+  },
+  {
+    "id": "sports-yonhap",
+    "name": "Yonhap · 体育",
+    "url": "https://www.yna.co.kr/rss/sports.xml",
+    "homepage": "https://www.yna.co.kr",
+    "country": "韩国",
+    "language": "ko",
+    "category": "体育",
+    "source_type": "新闻媒体",
+    "enabled": true,
+    "ingest": "rss",
+    "coverage_region": "east-asia",
+    "max_items": 24,
+    "catalog_revision": "2026-10-27-coverage-2",
+    "purpose": "重大赛事/奖项正式结果、国际体育与韩国体育"
+  },
+  {
+    "id": "culture-yonhap",
+    "name": "Yonhap · 文化娱乐",
+    "url": "https://www.yna.co.kr/rss/entertainment.xml",
+    "homepage": "https://www.yna.co.kr",
+    "country": "韩国",
+    "language": "ko",
+    "category": "娱乐",
+    "source_type": "新闻媒体",
+    "enabled": true,
+    "ingest": "rss",
+    "coverage_region": "east-asia",
+    "max_items": 24,
+    "catalog_revision": "2026-10-27-coverage-2",
+    "purpose": "韩国文化作品、主要奖项和文化产业"
   }
 ]

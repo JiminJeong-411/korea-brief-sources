@@ -1,9 +1,11 @@
+import {chooseCandidates,fairCandidateQueue} from '../lib/research/candidates';
+import {keepSportsNews,majorSportsMilestone,sportsEventKey} from '../lib/research/sports';
 import "dotenv/config";
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {SELECTION_VERSION, isImportant, isFeatured, obviousNoise} from '../lib/research/selection';
 import {describeError, fetchText, retry} from '../lib/research/network';
-import {collectCommunity, summarizeCommunity, COMMUNITY_VERSION} from '../lib/research/community';
+import {collectCommunity, summarizeCommunity, COMMUNITY_VERSION, refreshDigest, appendCommunityHistory} from '../lib/research/community';
 import Parser from "rss-parser";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
@@ -54,6 +56,7 @@ const CATEGORY_TERMS: Record<string, RegExp> = {
   society: /社会|教育|医疗|学校|医院|地震|台风|洪水|移民|犯罪|警方|住房|福利|罢工|人口|交通|\b(?:society|education|health|hospitals?|schools?|earthquake|typhoon|floods?|migration|crime|police|housing|welfare|strike|population)\b/gi
 };
 function classifyCategory(title: string, summary: string, sourceCategory: unknown): string {
+  if(majorSportsMilestone(title,summary))return 'sports';
   const seed=normalizeCategory(sourceCategory), scores: Record<string,number>={};
   for(const id of Object.keys(CATEGORY_LABELS)) {
     const re=CATEGORY_TERMS[id];
@@ -98,16 +101,7 @@ function duplicateInBatch(url: string, titles: string[], date: number, seenUrls:
   seenUrls.add(key);if(Number.isFinite(date))for(const title of titles)seenTitles.set(title,[...(seenTitles.get(title)||[]),date]);
   return duplicate;
 }
-function keepSports(category: string, title: string, excerpt: string): boolean {
-  if(category!=='sports')return true;
-  const headline=plainText(title),body=plainText(excerpt),text=headline+' '+body;
-  // 韩国参与依据原始新闻内容，不使用模板化“可能影响韩国”来批准本地赛况。
-  if(/韩国|朝鲜|韩籍|韩裔|孙兴慜|金玟哉|李刚仁|李政厚|金河成|金惠成|柳贤振|한국|손흥민|\b(?:korea|korean|k-?league|kbo|son heung[- ]min|heung[- ]min son|kim min[- ]jae|lee kang[- ]in|jung[- ]hoo lee|ha[- ]seong kim|hye[- ]seong kim|samsung|hyundai|kia motors)\b/i.test(headline))return true;
-  if(/韩国.{0,12}(?:球员|运动员|球队|国家队)|\bkorean (?:player|athlete|team|guard|pitcher)\b|\b(?:son heung[- ]min|jung[- ]hoo lee)\b/i.test(body))return true;
-  if(/奥运|残奥|世界杯|亚运|世锦赛|世界锦标赛|欧冠|大满贯|温网|澳网|法网|美网|\b(?:olympics?|paralympics?|world cup|asian games|world championships?|champions league|grand slam|wimbledon|australian open|roland garros|us open|formula (?:one|1)|f1)\b/i.test(text))return true;
-  if(/\b(?:global|international|cross-border|overseas|worldwide)\b[\s\S]{0,90}\b(?:broadcast|streaming|media rights|tv rights|sponsor|investment|acquisition|expansion)|\b(?:broadcast|streaming|media rights|tv rights|sponsor|investment|acquisition|expansion)[\s\S]{0,90}\b(?:global|international|cross-border|overseas|worldwide)\b|全球转播|国际转播|海外版权|跨境投资|全球赞助|国际赞助|跨国并购/i.test(text))return true;
-  return false;
-}
+const keepSports=keepSportsNews;
 
 // Keep the original PostgreSQL / Supabase REST / DeepSeek architecture and table.
 const TABLE='english_hot_news';
@@ -191,8 +185,6 @@ export async function executePipeline(){
     const key=keyOf(url);if(attempted.has(key)){counts.duplicates++;return;}attempted.add(key);
     const excerpt=plainText(item.contentSnippet||item.summary||item.content||'').slice(0,5000);
     const seed=classifyCategory(title,excerpt,feed.category);
-    if(obviousNoise(title)){counts.filtered_noise++;return;}
-    if(!keepSports(seed,title,excerpt)){counts.filtered_sports++;return;}
     const timestamp=Date.parse(item.isoDate||item.pubDate||'');
     const publishedAt=Number.isFinite(timestamp)?new Date(timestamp).toISOString():null;
     if(!backfill&&publishedAt&&(timestamp<Date.now()-30*86400000||timestamp>Date.now()+3600000))return;
@@ -202,6 +194,16 @@ export async function executePipeline(){
       if(!existing){const r=await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${url} OR raw_url=${String(item.link)} LIMIT 1`);existing=r.rows[0];}
       const oldSources=parseSources(existing?.cluster_urls);
       if(existing&&!reanalyze&&oldSources.some(s=>s.analysis_version===VERSION)){counts.duplicates++;return;}
+      const noise=obviousNoise(title),excludedSport=!keepSports(seed,title,excerpt);
+      if(noise||excludedSport){
+        if(noise)counts.filtered_noise++;else counts.filtered_sports++;
+        if(existing){
+          const primary={...(oldSources[0]||{}),url:existing.raw_url,title,content_type:'news',analysis_version:VERSION,screening:{version:VERSION,eligible:false,reason:noise?'明确琐事/博彩等低价值格式':'非重点本地体育赛况'}};
+          const id=await writeRecord(existing,{cluster_urls:JSON.stringify([primary,...oldSources.slice(1)])});
+          if(id!==undefined){counts.updated++;verifyIds.push(id);}
+        }
+        return;
+      }
       if(!existing&&duplicateInBatch(url,headlineKeys(title),Number.isFinite(timestamp)?timestamp:Date.now(),seenUrls,seenTitles)){counts.duplicates++;return;}
       analyzed++;stage='DeepSeek 新闻评估';
       const analysis=await evaluateGeopoliticalRisk(title,CATEGORY_LABELS[seed],excerpt);
@@ -209,7 +211,7 @@ export async function executePipeline(){
       const regions=getValidRegionIds(analysis.region,title+' '+excerpt);
       const names:Record<string,string>={'east-asia':'东亚','southeast-asia':'东南亚',europe:'欧洲','north-america':'北美','south-america':'南美',africa:'非洲',oceania:'大洋洲','middle-east':'中东'};
       const primary={source:feed.name||new URL(url).hostname,url,title,excerpt,published_at:publishedAt,regions,
-        analysis_version:VERSION,score_scale:10,content_type:'news',intelligence:analysis.intelligence};
+        analysis_version:VERSION,score_scale:10,content_type:'news',source_country:feed.country||'',intelligence:analysis.intelligence};
       const values:Record<string,any>={raw_title:title,translated_title:analysis.titleZh,raw_url:existing?.raw_url||url,
         source_site:feed.name||new URL(url).hostname,assigned_category:CATEGORY_LABELS[category],ai_score:analysis.score,
         ai_summary:analysis.summaryZh,deep_report:analysis.strategicReport||null,
@@ -240,15 +242,26 @@ export async function executePipeline(){
     }
     if(candidates.length>itemLimit)console.log('可能还有旧记录未重评；重复相同命令会跳过已完成的新版本记录。');
   }else if(!communityOnly){
-    for(const feed of feeds){
-      if(analyzed>=itemLimit)break;
-      let items:any[];
-      try{const xml=await fetchText(feed.url);if(!/<(?:rss|feed|rdf:RDF)\b/i.test(xml))throw Error('返回内容不是 RSS/Atom');items=(await parser.parseString(xml)).items.slice(0,feed.max_items||6);}
-      catch(e){counts.failed_sources++;console.warn(`信源 ${feed.name}：${describeError(e,'RSS 读取')}`);continue;}
-      console.log(`采集 ${feed.name}：${items.length} 条候选`);
-      for(const item of items)await processItem(item,feed);
+    const batches:{feed:any;items:any[]}[]=[];
+    // Bounded parallel RSS reads; AI and database mutations remain sequential.
+    for(let i=0;i<feeds.length;i+=4){
+      const results=await Promise.all(feeds.slice(i,i+4).map(async(feed:any)=>{
+        try{
+          const xml=await fetchText(feed.url);if(!/<(?:rss|feed|rdf:RDF)\b/i.test(xml))throw Error('返回内容不是 RSS/Atom');
+          const parsed=(await parser.parseString(xml)).items||[];
+          const items=chooseCandidates(feed,parsed);
+          console.log(`扫描 ${feed.name}：${parsed.length} 条 RSS，${items.length} 条候选`);
+          return {feed,items};
+        }catch(e){counts.failed_sources++;console.warn(`信源 ${feed.name}：${describeError(e,'RSS 读取')}`);return {feed,items:[]};}
+      }));
+      batches.push(...results);
     }
+    // Major results first, then rotate through sources; a small budget cannot starve the last source.
+    const queue=fairCandidateQueue(batches);
+    console.log(`候选队列 ${queue.length} 条；本轮最多 ${itemLimit} 条 AI 评估；重大结果优先、其余轮询信源。`);
+    for(const {feed,item} of queue){if(analyzed>=itemLimit)break;await processItem(item,feed);}
   }
+
   if(!backfill&&!skipCommunity){
     const sources=JSON.parse(fs.readFileSync(path.resolve(process.cwd(),'lib/research/community-sources.json'),'utf8'));
     for(const source of sources.filter((s:any)=>s.enabled&&s.adapter!=='reference')){
@@ -257,10 +270,11 @@ export async function executePipeline(){
         if(!samples.length){console.log(`社区 ${source.name}：没有可用样本`);continue;}
         const existing=(await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${source.homepage} LIMIT 1`)).rows[0] as any;
         const old=parseSources(existing?.cluster_urls)[0];
-        const signature=createHash('sha256').update(JSON.stringify(samples.map(s=>[s.url,s.title,s.excerpt]))).digest('hex');
+        const signature=createHash('sha256').update(JSON.stringify(samples.map(s=>[s.url,s.title,s.excerpt,(s.commentsSample||[]).map(c=>[c.ref,c.excerpt])]))).digest('hex');
         // Reuse the AI summary when sample content is unchanged; refresh real heat snapshots.
         const unchanged=old?.community?.version===COMMUNITY_VERSION&&old?.sample_signature===signature;
-        const digest=unchanged?{...old.community,observedAt:new Date().toISOString(),samples:old.community.samples.map((s:any)=>({...s,...samples.find(n=>n.url===s.url)}))}:await summarizeCommunity(samples,source);
+        const refreshed=unchanged?refreshDigest(old.community,samples):await summarizeCommunity(samples,source);
+        const digest=appendCommunityHistory(old?.community,refreshed);
         const primary={url:source.homepage,source:source.name,content_type:'community_digest',analysis_version:COMMUNITY_VERSION,
           observed_at:digest.observedAt,community:{...digest,samples:digest.samples.map(({excerpt,...s}:any)=>s)},sample_signature:signature};
         const values:Record<string,any>={raw_url:source.homepage,raw_title:digest.title,translated_title:digest.title,source_site:source.name,
