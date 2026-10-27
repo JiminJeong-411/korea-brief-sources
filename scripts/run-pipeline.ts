@@ -1,8 +1,8 @@
 import "dotenv/config";
 import Parser from "rss-parser";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
 import { Pool } from "pg";
-import { news } from "../db/schema";
 import { evaluateGeopoliticalRisk } from "../lib/research/ai";
 import fs from "fs";
 import path from "path";
@@ -104,65 +104,144 @@ function keepSports(category: string, title: string, excerpt: string): boolean {
   return false;
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// 与现有公开接口一致；不使用未在该线上项目落地的 news 表。
+const TABLE = 'english_hot_news';
+const VERSION = 'korea-business-20261026';
+const pool = new Pool({connectionString:process.env.DATABASE_URL, connectionTimeoutMillis:10000});
 const db = drizzle(pool);
-const parser = new Parser({ timeout: 15000 });
+const parser = new Parser({timeout:15000});
+const checkOnly = process.argv.includes('--check');
+const reanalyze = process.argv.includes('--reanalyze');
+const flag = process.argv.find(s=>s.startsWith('--limit='));
+const itemLimit = flag ? Number(flag.split('=')[1]) : Infinity;
 
-async function executePipeline() {
-  console.log('全球新闻采集启动');
-  const feedsPath = path.resolve(process.cwd(), 'lib/research/feeds.json');
-  const feedsData = JSON.parse(fs.readFileSync(feedsPath, 'utf-8'));
-  const allFeeds = Array.isArray(feedsData) ? feedsData : (feedsData.feeds || []);
-  const feeds = allFeeds.filter((feed: any) => feed.enabled !== false && feed.ingest !== 'reference' && !feed.replaced_by);
-  if (feeds.length === 0) throw new Error('未找到启用的新闻信源');
-  console.log(`载入 ${feeds.length} 个启用信源，准备抓取。`);
-  const seenUrls = new Set<string>();
-  const seenTitles = new Map<string,number[]>();
-  let processed = 0, duplicates = 0, filteredSports = 0, failedFeeds = 0;
-  for (const feed of feeds) {
-    console.log(`连接信源: ${feed.name} [${feed.category}]`);
-    try {
-      const parsedFeed = await parser.parseURL(feed.url);
-      const items = (parsedFeed.items || []).slice(0,5);
-      for (const item of items) {
-        if (!item.title || !item.link) continue;
-        const articleUrl = cleanArticleUrl(item.link);
-        if (!articleUrl) continue;
-        const summary = plainText(item.contentSnippet || item.summary || '');
-        const categoryId = classifyCategory(item.title, summary, feed.category);
-        if (!keepSports(categoryId, item.title, summary)) {filteredSports++;continue;}
-        const rawDate = item.isoDate || item.pubDate || '';
-        if (duplicateInBatch(articleUrl, headlineKeys(item.title), Date.parse(rawDate), seenUrls, seenTitles)) {duplicates++;continue;}
-        const category = CATEGORY_LABELS[categoryId];
-        console.log(`  AI 正在评估: ${item.title.slice(0,40)}...`);
-        const analysis = await evaluateGeopoliticalRisk(item.title, category, summary);
-        const regions = getValidRegionIds(analysis.region, item.title + ' ' + summary);
-        const regionNames: Record<string,string> = {'east-asia':'东亚','southeast-asia':'东南亚',europe:'欧洲','north-america':'北美','south-america':'南美',africa:'非洲',oceania:'大洋洲','middle-east':'中东'};
-        await db.insert(news).values({
-          title: item.title,
-          rawUrl: articleUrl,
-          sourceSite: feed.name,
-          category,
-          region: regions.length ? regions.map(id => regionNames[id]).join('、') : analysis.region,
-          aiScore: analysis.score,
-          aiSummary: item.contentSnippet?.slice(0,180) || '',
-          strategicReport: analysis.strategicReport,
-          publishedAt: item.isoDate ? new Date(item.isoDate) : new Date()
-        }).onConflictDoNothing({target: news.rawUrl});
-        processed++;
-      }
-    } catch (err: any) {
-      failedFeeds++;
-      const cause = err?.cause || err;
-      console.warn(`信源 ${feed.name} 未完成：${cause.code || ''} ${cause.message || String(cause)}`);
-    }
-  }
-  // processed为已提交处理数，数据库唯一约束可能跳过旧链接，不声称全部都是新增。
-  console.log(JSON.stringify({processed, duplicate_in_run:duplicates, filtered_sports:filteredSports, failed_feeds:failedFeeds, enabled_sources:feeds.length}));
+function usefulError(error: any): string {
+  const cause=error?.cause || error;
+  const code=String(cause?.code || '');
+  if(code==='ENOTFOUND'||code==='EAI_AGAIN')return '数据库主机解析失败：核对现有 DATABASE_URL、网络和 DNS；如直连地址在当前网络不可用，使用同一 Supabase 项目的 Session pooler 连接串。';
+  if(code==='28P01')return '28P01：数据库登录失败，请核对现有 DATABASE_URL。';
+  // 不输出数据库连接串、密钥、SQL 参数或全文报告。
+  return code ? `数据库/网络错误 ${code}` : String(cause?.message || '未知错误').replace(/postgres(?:ql)?:\/\/\S+/gi,'[数据库地址]').slice(0,220);
+}
+function parseSources(value: any): any[] {
+  if(typeof value==='string'){try{value=JSON.parse(value);}catch{return [];}}
+  return Array.isArray(value)?value.filter(x=>x && typeof x==='object'):[];
+}
+async function preflight(): Promise<Set<string>> {
+  if(!process.env.DATABASE_URL)throw new Error('未配置 DATABASE_URL；请在原项目根目录使用原来的 .env 运行。');
+  if(flag && (!Number.isInteger(itemLimit)||itemLimit<1))throw new Error('--limit 必须是正整数');
+  const webUrl=process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/,'');
+  const anonKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if(!webUrl||!anonKey)throw new Error('缺少 NEXT_PUBLIC_SUPABASE_URL 或 NEXT_PUBLIC_SUPABASE_ANON_KEY，无法核对采集与网站是否同一项目。');
+  let pgRef='',webRef='';
+  try {
+    const pg=new URL(process.env.DATABASE_URL),web=new URL(webUrl);
+    webRef=web.hostname.match(/^([a-z0-9]+)\.supabase\.co$/i)?.[1]||'';
+    pgRef=pg.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i)?.[1]||decodeURIComponent(pg.username).match(/^postgres\.([a-z0-9]+)$/i)?.[1]||'';
+  }catch{throw new Error('数据库或 Supabase URL 格式无效');}
+  if(webRef && pgRef && webRef!==pgRef)throw new Error('DATABASE_URL 与 NEXT_PUBLIC_SUPABASE_URL 指向不同 Supabase 项目。请核对现有配置。');
+  const result=await db.execute(sql`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=${TABLE}`);
+  const columns=new Set<string>(result.rows.map((r:any)=>String(r.column_name)));
+  const required=['id','raw_title','translated_title','raw_url','source_site','assigned_category','ai_score','ai_summary','deep_report','created_at'];
+  const missing=required.filter(c=>!columns.has(c));
+  if(missing.length)throw new Error(`public.${TABLE} 缺少所需列：${missing.join(', ')}。未采集、未改表。`);
+  const response=await fetch(`${webUrl}/rest/v1/${TABLE}?select=id&limit=1`,{headers:{apikey:anonKey,Authorization:`Bearer ${anonKey}`},cache:'no-store',signal:AbortSignal.timeout(10000)});
+  if(!response.ok)throw new Error(`网站读取 public.${TABLE} 失败（HTTP ${response.status}），未开始付费 AI 调用。`);
+  const publicRows=await response.json();
+  if(!Array.isArray(publicRows))throw new Error('网站数据接口返回格式异常');
+  console.log(`检查通过：PostgreSQL 和 REST 均可访问 public.${TABLE}；公开可见样本 ${publicRows.length} 条。`);
+  if(!publicRows.length)console.log('提示：公开接口返回空数组，可能表为空或当前读取策略隐藏了记录；写入后会再次验证可见性。');
+  return columns;
 }
 
-executePipeline().catch((error: any) => {
-  const cause = error?.cause || error;
-  console.error(cause.code || '', cause.message || String(cause));
-  process.exitCode = 1;
-}).finally(() => pool.end());
+async function executePipeline() {
+  const columns=await preflight();
+  if(checkOnly){console.log('连接与表结构检查完成；未调用 AI，未写入或修改记录。');return;}
+  if(!process.env.DEEPSEEK_API_KEY)throw new Error('未配置 DEEPSEEK_API_KEY，未开始采集。');
+  const file=path.resolve(process.cwd(),'lib/research/feeds.json');
+  const data=JSON.parse(fs.readFileSync(file,'utf8'));
+  const all=Array.isArray(data)?data:data.feeds;
+  if(!Array.isArray(all))throw new Error('feeds.json 格式错误');
+  const feeds=all.filter((f:any)=>f.enabled!==false && f.ingest!=='reference' && !f.replaced_by && f.url);
+  if(!feeds.length)throw new Error('没有启用的 RSS 信源');
+  // 历史快照用于跨信源/跨运行去重，不清空或删除历史记录。
+  const previous=await db.execute(sql`SELECT * FROM public.english_hot_news ORDER BY id DESC LIMIT 5000`);
+  const existingByUrl=new Map<string,any>();
+  const seenUrls=new Set<string>();const seenTitles=new Map<string,number[]>();
+  const urlKey=(url:string)=>url.replace(/^(https?:\/\/)(?:www\.)/i,'$1');
+  for(const r of previous.rows as any[]){
+    const u=cleanArticleUrl(r.raw_url);if(!u)continue;
+    if(!existingByUrl.has(urlKey(u)))existingByUrl.set(urlKey(u),r);
+    duplicateInBatch(u,headlineKeys(r.raw_title,r.translated_title),Date.parse(r.created_at||''),seenUrls,seenTitles);
+  }
+  const attempted=new Set<string>();
+  const counts={fetched:0,inserted:0,updated:0,duplicates:0,filtered_sports:0,failed_sources:0,failed_items:0};
+  let analyzed=0,verifyId:any=null;
+  for(const feed of feeds){
+    if(analyzed>=itemLimit)break;
+    let items:any[];
+    try{items=(await parser.parseURL(feed.url)).items.slice(0,5);}
+    catch(error){counts.failed_sources++;console.warn(`信源 ${feed.name} 读取失败：${usefulError(error)}`);continue;}
+    console.log(`采集 ${feed.name}：${items.length} 条候选`);
+    for(const item of items){
+      if(analyzed>=itemLimit)break;
+      counts.fetched++;
+      const title=plainText(item.title),url=cleanArticleUrl(item.link);if(!title||!url)continue;
+      const key=urlKey(url);if(attempted.has(key)){counts.duplicates++;continue;}
+      attempted.add(key);
+      const excerpt=plainText(item.contentSnippet||item.summary||item.content||'');
+      const category=classifyCategory(title,excerpt,feed.category);
+      if(!keepSports(category,title,excerpt)){counts.filtered_sports++;continue;}
+      const parsedDate=Date.parse(item.isoDate||item.pubDate||'');
+      const publishedAt=Number.isFinite(parsedDate)?new Date(parsedDate).toISOString():null;
+      // 过滤超过30天或明显来自未来的条目；无日期条目仍可收集。
+      if(publishedAt&&(parsedDate<Date.now()-30*86400000||parsedDate>Date.now()+3600000))continue;
+      let existing=existingByUrl.get(key);
+      try {
+        if(!existing){
+          // 旧URL可能不在最近5000条快照中；精确链接查询在AI调用前执行。
+          const found=await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${url} OR raw_url=${String(item.link)} LIMIT 1`);
+          existing=found.rows[0];
+        }
+        const oldSources=parseSources(existing?.cluster_urls);
+        if(existing&&!reanalyze&&oldSources.some(s=>s.analysis_version===VERSION)){counts.duplicates++;continue;}
+        if(!existing && duplicateInBatch(url,headlineKeys(title),Number.isFinite(parsedDate)?parsedDate:Date.now(),seenUrls,seenTitles)){counts.duplicates++;continue;}
+        analyzed++;
+        const analysis=await evaluateGeopoliticalRisk(title,CATEGORY_LABELS[category],excerpt);
+        const regions=getValidRegionIds(analysis.region,title+' '+excerpt);
+        const names:Record<string,string>={'east-asia':'东亚','southeast-asia':'东南亚',europe:'欧洲','north-america':'北美','south-america':'南美',africa:'非洲',oceania:'大洋洲','middle-east':'中东'};
+        const values:Record<string,any>={raw_title:title,translated_title:analysis.titleZh||title,
+          raw_url:existing?.raw_url||url,source_site:feed.name||new URL(url).hostname,
+          assigned_category:CATEGORY_LABELS[category],ai_score:analysis.score,
+          ai_summary:analysis.summaryZh||excerpt.slice(0,300),deep_report:analysis.strategicReport||null};
+        if(columns.has('has_report'))values.has_report=true; // 兼容旧Python流程的“已处理”标记。
+        if(columns.has('region'))values.region=regions.map(id=>names[id]).join('、')||'全球/其它';
+        if(columns.has('published_at')&&publishedAt)values.published_at=publishedAt;
+        if(columns.has('cluster_urls')){
+          const primary={source:feed.name||new URL(url).hostname,url,title,excerpt:excerpt.slice(0,5000),published_at:publishedAt,regions,analysis_version:VERSION,score_scale:10};
+          values.cluster_urls=JSON.stringify([primary,...oldSources.filter(s=>cleanArticleUrl(s.url)!==url&&s.url!==existing?.raw_url)]);
+        }
+        const entries=Object.entries(values);
+        const written=existing
+          ? await db.execute(sql`UPDATE public.english_hot_news SET ${sql.join(entries.map(([k,v])=>sql`${sql.identifier(k)}=${v}`),sql`, `)} WHERE id=${existing.id} RETURNING id`)
+          : await db.execute(sql`INSERT INTO public.english_hot_news (${sql.join(entries.map(([k])=>sql.identifier(k)),sql`, `)}) VALUES (${sql.join(entries.map(([,v])=>sql`${v}`),sql`, `)}) ON CONFLICT DO NOTHING RETURNING id`);
+        if(written.rows.length){
+          if(existing)counts.updated++;else counts.inserted++;
+          verifyId=written.rows[0].id;
+          existingByUrl.set(key,{...values,id:verifyId,created_at:existing?.created_at||new Date().toISOString()});
+        }else counts.duplicates++;
+      }catch(error){counts.failed_items++;console.warn(`条目处理失败：${title.slice(0,55)}；${usefulError(error)}`);}
+    }
+  }
+  console.log('实际处理结果：'+JSON.stringify(counts));
+  if(verifyId!==null){
+    const webUrl=process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\/+$/,'');const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const result=await fetch(`${webUrl}/rest/v1/${TABLE}?select=id&id=eq.${encodeURIComponent(String(verifyId))}`,{headers:{apikey:key,Authorization:`Bearer ${key}`},cache:'no-store',signal:AbortSignal.timeout(10000)});
+    const visible=result.ok?await result.json():[];
+    if(!Array.isArray(visible)||!visible.some((r:any)=>String(r.id)===String(verifyId)))throw new Error('记录已写入，但网站使用的 REST 身份读不到该记录。请检查两端项目配置与现有 SELECT 策略。');
+    console.log('闭环检查通过：本轮写入记录可被网站使用的 REST 身份读取。数据库更新无需再次部署。');
+  }
+  if(counts.failed_items||counts.failed_sources)process.exitCode=1;
+  if(!counts.fetched && !counts.failed_sources)throw new Error('所有信源都未返回候选新闻，本次没有更新。');
+}
+executePipeline().catch(error=>{console.error('采集未完成：'+usefulError(error));process.exitCode=1;}).finally(()=>pool.end());

@@ -1,3 +1,5 @@
+import feedCatalog from '../../../../lib/research/feeds.json';
+
 // 业务规则：仅统一分类、地区、去重和体育范围；不负责连接数据库。
 const CATEGORY_LABELS: Record<string, string> = {
   economy: '经济', politics: '政治', society: '社会',
@@ -95,12 +97,30 @@ function keepSports(category: string, title: string, excerpt: string): boolean {
   return false;
 }
 
+function sourceArticles(value: unknown): any[] {
+  if(typeof value==='string'){try{value=JSON.parse(value);}catch{return [];}}
+  return Array.isArray(value)?value.filter(x=>x && typeof x==='object'):[];
+}
+function publicScore(value: unknown): number | null {
+  if(value===null || value===undefined || value==='')return null;
+  const score=Number(value);if(!Number.isFinite(score)||score<1||score>100)return null;
+  // 旧Python和当前TS采集均用1–10分；兼容已有明确大于10的百分制记录。
+  return Math.round(score<=10?score*10:score);
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
 
-  if (url.pathname.endsWith('/sources')) return Response.json({ sources: [] });
+  if (url.pathname.endsWith('/sources')) {
+    const catalog: any=feedCatalog;
+    const feeds=Array.isArray(catalog)?catalog:catalog.feeds||[];
+    return Response.json({sources:feeds.filter((f:any)=>f.enabled!==false&&!f.replaced_by&&f.ingest!=='reference').map((f:any)=>({
+      id:f.id||f.url,name:f.name,homepage:f.homepage||f.url,country:f.country||'',
+      region:f.coverage_region||'other',type:f.source_type||'新闻媒体',status_label:'信源目录；实时采集结果以运行日志为准'
+    }))}, {headers:{'Cache-Control':'no-store'}});
+  }
   if (url.pathname.endsWith('/data')) return Response.json({});
-  if (url.pathname.endsWith('/refresh')) return Response.json({ success: true });
+  if (url.pathname.endsWith('/refresh')) return Response.json({success:true, mode:'read-latest', message:'重新读取已入库新闻；采集通过现有 pipeline 执行。'}, {headers:{'Cache-Control':'no-store'}});
 
   const modeParam = url.searchParams.get('mode') || '';
   const categoryParam = url.searchParams.get('category') || '';
@@ -119,9 +139,9 @@ export async function GET(request: Request) {
     const supabaseUrl = rawUrl.replace(/\/+$/, "");
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !anonKey) return Response.json(safeFallback);
+    if (!supabaseUrl || !anonKey) return Response.json({...safeFallback,success:false,error:'NEWS_CONFIG_MISSING'}, {status:503,headers:{'Cache-Control':'no-store'}});
 
-    const tableName = "news";
+    const tableName = "english_hot_news";
     const fetchUrl = `${supabaseUrl}/rest/v1/${tableName}?select=*&order=id.desc&limit=500`;
     
     const res = await fetch(fetchUrl, {
@@ -131,30 +151,35 @@ export async function GET(request: Request) {
     });
 
     if (!res.ok) {
-      console.error('Public news read failed:', res.status);
+      const detail=await res.json().catch(()=>({}));
+      console.error('Public news read failed:', res.status, String(detail.code||''), String(detail.message||'').slice(0,250));
       return Response.json({...safeFallback, success: false, error: 'NEWS_READ_FAILED'}, {status: 502, headers: {'Cache-Control': 'no-store'}});
     }
 
     const rawRecords = await res.json();
-    if (!Array.isArray(rawRecords)) return Response.json(safeFallback);
+    if (!Array.isArray(rawRecords)) return Response.json({...safeFallback,success:false,error:'NEWS_RESPONSE_INVALID'}, {status:502,headers:{'Cache-Control':'no-store'}});
 
 
     const formattedRecords: any[] = [];
     const seenUrls = new Set<string>();
     const seenTitles = new Map<string, number[]>();
     for (const r of rawRecords) {
-      const title = plainText(r.title);
+      const title = plainText(r.translated_title || r.raw_title);
       const articleUrl = cleanArticleUrl(r.raw_url);
       if (!title || !articleUrl) continue;
       const summary = plainText(r.ai_summary);
-      const evidenceText = summary;
-      const category = classifyCategory(title, evidenceText, r.category);
-      if (!keepSports(category, title, evidenceText)) continue;
-      const date = r.published_at || r.created_at || ''; 
-      if (duplicateInBatch(articleUrl, headlineKeys(title), Date.parse(date), seenUrls, seenTitles)) continue;
-      const mappedRegions = getValidRegionIds(r.region, title + ' ' + evidenceText);
-      const numericScore = Number(r.ai_score);
-      const assessed = r.ai_score !== null && r.ai_score !== undefined && r.ai_score !== '' && Number.isFinite(numericScore) && numericScore >= 1 && numericScore <= 10;
+      const linkedSources = sourceArticles(r.cluster_urls);
+      const primary = linkedSources.find(x=>cleanArticleUrl(x.url)===articleUrl) || linkedSources[0];
+      const evidenceText = plainText(primary?.excerpt || r.content || r.original_excerpt || r.ai_summary);
+      const headline = [...new Set([plainText(r.raw_title),title])].filter(Boolean).join(' ');
+      const category = classifyCategory(headline, evidenceText, r.assigned_category);
+      if (!keepSports(category, headline, evidenceText)) continue;
+      const dateCandidate = r.published_at || primary?.published_at || r.created_at || '';
+      const date = Number.isFinite(Date.parse(dateCandidate)) ? new Date(dateCandidate).toISOString() : '';
+      if (duplicateInBatch(articleUrl, headlineKeys(title, r.raw_title), Date.parse(date), seenUrls, seenTitles)) continue;
+      const mappedRegions = getValidRegionIds(r.region || primary?.regions, headline + ' ' + evidenceText);
+      const numericScore = publicScore(r.ai_score);
+      const assessed = numericScore !== null;
       const dimensions: Record<string, number | null> = {};
       for (const id of ['korea_link','business_impact','cross_border','urgency','evidence']) {
         const value = r.dimensions?.[id];
@@ -162,6 +187,7 @@ export async function GET(request: Request) {
       }
       formattedRecords.push({
         id: r.id ?? ('news:' + articleUrl),
+        type: 'news',
         title,
         url: r.raw_url,
         source: r.source_site || '全球信源',
@@ -169,25 +195,25 @@ export async function GET(request: Request) {
         regions: mappedRegions,
         date,
         summary: summary || '原文内容分析中...',
-        ai_assisted: !!r.ai_summary || !!r.strategic_report,
+        ai_assisted: !!r.ai_summary || !!r.translated_title,
         content_kind: 'rss_excerpt',
-        hasReport: !!r.strategic_report,
+        hasReport: !!r.deep_report,
         relevance: assessed ? {
-          // news.ai_score 为 1–10；前端沿用 0–100 评分及热点阈值。
-          score: Math.round(numericScore * 10),
-          reason: plainText(r.strategic_report) || '尚无针对此条新闻的具体韩国关联分析。',
+          score: numericScore,
+          reason: plainText(r.deep_report) || '尚无针对此条新闻的具体韩国关联分析。',
           channel: plainText(r.channel) || '尚未提供具体传导机制',
           companies: Array.isArray(r.companies) ? r.companies : [],
           dimensions,
           confidence: ['low','medium','high'].includes(r.confidence) ? r.confidence : 'low',
           quote: plainText(r.quote) || title
         } : null,
-        source_count: 1
+        source_count: Math.max(1,new Set(linkedSources.map(x=>x.source||x.url).filter(Boolean)).size)
       });
     }
 
     // 使用前端实际的六类ID和八区ID；先去重和执行体育规则，再筛选、统计。
     const days = Number(url.searchParams.get('days') || 0);
+    formattedRecords.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     const windowRecords = [1,7,30].includes(days)
       ? formattedRecords.filter(r => Date.parse(r.date) >= Date.now() - days * 86400000 && Date.parse(r.date) <= Date.now() + 3600000)
       : formattedRecords;
@@ -205,7 +231,7 @@ export async function GET(request: Request) {
       const q = qParam.toLowerCase();
       finalRecords = finalRecords.filter(r => r.title.toLowerCase().includes(q) || r.summary.toLowerCase().includes(q));
     }
-    if (kindParam === 'brief') finalRecords = finalRecords.filter(r => r.hasReport);
+    if (kindParam === 'brief' || modeParam === 'research') finalRecords = finalRecords.filter(r => r.hasReport);
     const rankedRecords = finalRecords.filter(r => r.relevance && r.relevance.score >= 50)
       .slice().sort((a,b) => b.relevance.score - a.relevance.score || String(b.date).localeCompare(String(a.date)));
     if (modeParam === 'hot') finalRecords = rankedRecords;
@@ -215,21 +241,26 @@ export async function GET(request: Request) {
       assessed: finalRecords.filter(r => r.relevance !== null).length,
       reports: finalRecords.filter(r => r.hasReport).length
     };
+    const requestedPage=Number(url.searchParams.get('page')||1);
+    const page=Number.isInteger(requestedPage)&&requestedPage>0?requestedPage:1;
+    const pageSize=30;
+    const pageItems=finalRecords.slice((page-1)*pageSize,page*pageSize);
     const payload = {
-      news: finalRecords,
+      news: pageItems,
       hot: rankedRecords.slice(0,5),
-      items: finalRecords,
+      items: pageItems,
       events: [],
       counts: stats,
       thresholds: {hot: 50},
       regions: regionCounts,
       total: finalRecords.length,
-      page: 1,
-      hasMore: false,
-      has_more: false
+      page,
+      hasMore: page*pageSize<finalRecords.length,
+      has_more: page*pageSize<finalRecords.length
     };
     return Response.json({...payload, data: payload, result: payload, success: true}, {headers: {'Cache-Control': 'no-store'}});
   } catch (error: any) {
-    return Response.json({...safeFallback, data: safeFallback, result: safeFallback, error: error.message}, {status: 200});
+    console.error('Public news request failed:', error?.name || 'Error');
+    return Response.json({...safeFallback,data:safeFallback,result:safeFallback,success:false,error:'NEWS_FETCH_FAILED'}, {status:502,headers:{'Cache-Control':'no-store'}});
   }
 }
