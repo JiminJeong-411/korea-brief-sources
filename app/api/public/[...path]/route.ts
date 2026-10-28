@@ -1,3 +1,6 @@
+import {TREND_URL} from '../../../../lib/research/records';
+import companyCatalog from '../../../../lib/research/companies.json';
+import {COMPANY_VERSION,DAILY_VERSION,companyURL,isNewsRecord,primaryRecord} from '../../../../lib/research/records';
 import {TimedCache} from '../../../../lib/research/cache';
 import {entertainmentPriority,isKpop,lowValueEntertainment} from '../../../../lib/research/entertainment';
 const publicRowsCache=new TimedCache<any[]>(5*60_000,4);
@@ -112,12 +115,13 @@ export async function GET(request: Request) {
     }));
     const communities=communityCatalog.map((f:any)=>({id:f.id,name:f.name,homepage:f.homepage,country:'韩国',region:'east-asia',type:f.source_type||'社区参考',
       status_label:(f.enabled?(f.adapter==='naver'?'需要管理员配置 Naver API · ':f.adapter==='youtube'?'需要管理员配置 YouTube Data API · ':'已配置采集 · '):'未启用 · ')+f.scope}));
-    return Response.json({sources:[...newsSources,...communities]}, {headers:{'Cache-Control':'no-store'}});
+    const companies=companyCatalog.map(c=>({id:'company-'+c.id,name:c.name,homepage:c.ir_url,country:'韩国',region:'east-asia',type:'企业公开披露',status_label:'DART结构化财务与重点公告；官网静态IR索引，附件不视为已读'}));
+    return Response.json({sources:[...newsSources,...communities,...companies]}, {headers:{'Cache-Control':'no-store'}});
   }
   if (url.pathname.endsWith('/data')) return Response.json({});
   if (url.pathname.endsWith('/refresh')) return Response.json({success:true, mode:'read-latest', message:'重新读取已入库新闻；采集通过现有 pipeline 执行。'}, {headers:{'Cache-Control':'no-store'}});
 
-  const modeParam = url.searchParams.get('mode') || '';
+  const modeParam = url.pathname.endsWith('/daily')?'daily':url.pathname.endsWith('/companies')?'companies':url.searchParams.get('mode') || '';
   const categoryParam = url.searchParams.get('category') || '';
   const regionParam = url.searchParams.get('region') || '';
   const qParam = url.searchParams.get('q') || '';
@@ -141,11 +145,14 @@ export async function GET(request: Request) {
     const params=new URLSearchParams({select:'*',order:'id.desc',limit:String(pageLimit)});
     const briefRequest=url.pathname.endsWith('/brief');
     if(briefRequest){const id=url.searchParams.get('id')||'';if(!/^[1-9]\d*$/.test(id))return Response.json({error:'INVALID_REPORT_ID'},{status:400});params.set('id','eq.'+id);params.set('limit','1');}
+    if(modeParam==='companies')params.set('raw_url','in.('+companyCatalog.map(c=>JSON.stringify(companyURL(c.stock_code))).join(',')+')');
+    if(modeParam==='daily')params.set('raw_url','like.https://korea-brief.local/daily/*');
+    if(!['daily','companies','community'].includes(modeParam)&&!briefRequest)params.set('raw_url','not.like.https://korea-brief.local/*');
     if(modeParam==='community'){
-      params.set('raw_url','in.('+communityCatalog.filter(s=>s.enabled).map(s=>JSON.stringify(s.homepage)).join(',')+')');
+      params.set('raw_url','in.('+[...communityCatalog.filter(s=>s.enabled).map(s=>s.homepage),TREND_URL].map(s=>JSON.stringify(s)).join(',')+')');
     }
     const loadRecords=async()=>{const rawRecords:any[]=[];
-    for(let offset=0;offset<(modeParam==='community'?500:2000);offset+=pageLimit){
+    for(let offset=0;offset<(['community','daily','companies'].includes(modeParam)?500:2000);offset+=pageLimit){
       params.set('offset',String(offset));
       const res=await retry(async()=>{
         const r=await fetch(`${supabaseUrl}/rest/v1/${tableName}?${params}`,{
@@ -158,7 +165,22 @@ export async function GET(request: Request) {
       rawRecords.push(...rows);if(rows.length<pageLimit)break;
     }
       return rawRecords;};
-    const rawRecords=briefRequest?await loadRecords():await publicRowsCache.get([supabaseUrl,anonKey,modeParam==='community'?'community':'news'].join('|'),loadRecords,url.searchParams.get('fresh')==='1');
+    const rawRecords=briefRequest?await loadRecords():await publicRowsCache.get([supabaseUrl,anonKey,['community','daily','companies'].includes(modeParam)?modeParam:'news'].join('|'),loadRecords,url.searchParams.get('fresh')==='1');
+    if(modeParam==='companies'){
+      const items=companyCatalog.map(c=>{
+        const rows=rawRecords.filter(r=>r.raw_url===companyURL(c.stock_code));
+        const snapshot=rows.map(r=>primaryRecord(r)?.company).find(c=>c?.version===COMPANY_VERSION);
+        const {analysisSignature,errors,...profile}=snapshot||{};
+        return {...c,profile:snapshot?profile:null};
+      });
+      return Response.json({success:true,items,total:items.length,methodology:'跨行业核心企业与文化产业观察名单；非实时市值排名。财务来自DART结构化账户，官网附件未自动阅读全文。'}, {headers:{'Cache-Control':'no-store'}});
+    }
+    if(modeParam==='daily'){
+      const editions=rawRecords.map(r=>primaryRecord(r)?.daily).filter(d=>d?.version===DAILY_VERSION).sort((a,b)=>b.day.localeCompare(a.day));
+      const day=url.searchParams.get('date');if(day&&!/^\d{4}-\d{2}-\d{2}$/.test(day))return Response.json({error:'INVALID_DATE'},{status:400});
+      const chosen=day?editions.find(d=>d.day===day):editions[0]||null;
+      return Response.json({success:true,editions:editions.map(d=>({day:d.day,complete:d.complete,observedAt:d.observedAt})),edition:chosen?{...chosen,signature:undefined}:null}, {headers:{'Cache-Control':'no-store'}});
+    }
     if(briefRequest){
       const row=rawRecords[0],primary=sourceArticles(row?.cluster_urls).find(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row?.raw_url))||sourceArticles(row?.cluster_urls)[0];
       const assessment=readIntelligence(primary?.intelligence,plainText(row?.raw_title)+' '+plainText(primary?.excerpt),{title:plainText(row?.raw_title)});
@@ -174,11 +196,12 @@ export async function GET(request: Request) {
     }
     if(modeParam==='community'){
       const days=Number(url.searchParams.get('days')||7),q=qParam.toLowerCase();
+      const overview=rawRecords.map(r=>primaryRecord(r)?.trends).find(t=>t?.overview&&Date.parse(t.observedAt)>=Date.now()-36*3600000);
       const seen=new Set<string>();
       const items=rawRecords.flatMap(r=>{
         const primary=sourceArticles(r.cluster_urls).find(x=>x.content_type==='community_digest');
         const c=primary?.community;
-        if(!c||!['community-20261027-v1','community-20261027-v2'].includes(c.version)||!Array.isArray(c.themes)||(!c.themes.length&&!c.history?.length)||seen.has(r.raw_url))return [];
+        if(!c||!['community-20261027-v1','community-20261027-v2','community-20261028-v3'].includes(c.version)||!Array.isArray(c.themes)||(!c.themes.length&&!c.history?.length)||seen.has(r.raw_url))return [];
         seen.add(r.raw_url);
         const age=Date.now()-Date.parse(c.observedAt);
         if(!Number.isFinite(age)||age < -3600000||([1,7,30].includes(days)&&age>days*86400000))return [];
@@ -186,7 +209,7 @@ export async function GET(request: Request) {
         return [{id:r.id,type:'community',title:c.title,url:r.raw_url,source:r.source_site,date:c.observedAt,summary:c.summary,community:c}];
       }).sort((a,b)=>b.date.localeCompare(a.date));
       const pagination=paginate(items,url.searchParams.get('page')||1);
-      return Response.json({...safeFallback,...pagination,hasMore:pagination.has_more,...(url.searchParams.get('browse')==='1'?{browse_items:items}:{}),success:true,news:[],counts:{news:0,assessed:0,reports:0},selection_version:SELECTION_VERSION}, {headers:{'Cache-Control':'no-store'}});
+      return Response.json({...safeFallback,...pagination,overview:overview?{...overview,signature:undefined}:null,hasMore:pagination.has_more,...(url.searchParams.get('browse')==='1'?{browse_items:items}:{}),success:true,news:[],counts:{news:0,assessed:0,reports:0},selection_version:SELECTION_VERSION}, {headers:{'Cache-Control':'no-store'}});
     }
     let pendingAssessment=0,belowImportance=0,sportsExcluded=0,needsReassessment=0;
 
@@ -195,7 +218,7 @@ export async function GET(request: Request) {
     const eventSourceMap=new Map<string,any[]>();
     for(const row of rawRecords){
       const sources=sourceArticles(row.cluster_urls),primary=sources.find(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row.raw_url))||sources[0],event=readEvent(primary?.event);
-      if(event&&primary?.content_type!=='community_digest'){
+      if(event&&isNewsRecord(row)){
         const list=eventSourceMap.get(event.id)||[];
         list.push({url:row.raw_url,title:row.raw_title,source:row.source_site,published_at:primary?.published_at||null,coverage_kind:event.coverageKind});
         eventSourceMap.set(event.id,list);
@@ -208,7 +231,7 @@ export async function GET(request: Request) {
       const summary = plainText(r.ai_summary);
       const linkedSources = sourceArticles(r.cluster_urls);
       const primary = linkedSources.find(x=>cleanArticleUrl(x.url)===articleUrl) || linkedSources[0];
-      if(primary?.content_type==='community_digest')continue;
+      if(!isNewsRecord(r))continue;
       if(primary?.screening?.version===SELECTION_VERSION&&primary?.screening?.eligible===false){belowImportance++;continue;}
       const evidenceText = plainText(primary?.excerpt || r.original_excerpt || '');
       const assessment=readIntelligence(primary?.intelligence,plainText(r.raw_title)+' '+evidenceText,{title:plainText(r.raw_title)});

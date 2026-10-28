@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'ingest=采集并补评少量旧数据；check=只检查；reassess=仅重评旧数据；cluster=聚合已有报道'
+        description: 'ingest=采集并补评少量旧数据；check=只检查；reassess=仅重评旧数据；cluster=聚合已有报道；companies=公司披露；daily=只生成日报；community=只更新舆情'
         required: true
         default: ingest
         type: choice
-        options: [ingest, check, reassess, cluster]
+        options: [ingest, check, reassess, cluster, companies, daily, community]
       limit:
         description: '本次新闻AI评估上限（1–500）'
         required: true
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$PIPELINE_WORKDIR/scripts/run-pipeline.ts" || { echo '找不到 scripts/run-pipeline.ts；核对仓库目录或 PIPELINE_WORKDIR 变量'; exit 1; }
-          [[ "$RUN_MODE" =~ ^(ingest|check|reassess|cluster)$ ]] || exit 1
+          [[ "$RUN_MODE" =~ ^(ingest|check|reassess|cluster|companies|daily|community)$ ]] || exit 1
           [[ "$ITEM_LIMIT" =~ ^[1-9][0-9]*$ ]] && (( ITEM_LIMIT <= 500 )) || { echo 'limit 必须为1–500'; exit 1; }
           [[ "$HISTORY_DAYS" =~ ^[1-9][0-9]*$ ]] && (( HISTORY_DAYS <= 30 )) || exit 1
           [[ "$BACKFILL_LIMIT" =~ ^(0|[1-9][0-9]*)$ ]] && (( BACKFILL_LIMIT <= 100 )) || exit 1
@@ -90,6 +90,7 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: |
           set -euo pipefail
           cd "$PIPELINE_PROJECT"
@@ -97,8 +98,14 @@ jobs:
             node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --cluster-existing --days="$HISTORY_DAYS" --limit="$ITEM_LIMIT" --cluster-limit=120
           elif [[ "$RUN_MODE" == reassess ]]; then
             node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --reassess-existing --days="$HISTORY_DAYS" --limit="$ITEM_LIMIT"
+          elif [[ "$RUN_MODE" == companies ]]; then
+            node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --companies-only
+          elif [[ "$RUN_MODE" == daily ]]; then
+            node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --daily-only
+          elif [[ "$RUN_MODE" == community ]]; then
+            node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --community-only
           else
-            node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --limit="$ITEM_LIMIT"
+            node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --limit="$ITEM_LIMIT" --skip-daily
           fi
       - name: Gradually reassess the recent backlog
         if: ${{ !cancelled() && steps.preflight.outcome == 'success' && env.RUN_MODE == 'ingest' && env.BACKFILL_LIMIT != '0' }}
@@ -124,6 +131,18 @@ jobs:
           set -euo pipefail
           cd "$PIPELINE_PROJECT"
           node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --cluster-existing --days=30 --limit=60 --cluster-limit=120
+      - name: Publish daily briefs from stored evidence
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' && env.RUN_MODE == 'ingest' }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -euo pipefail
+          cd "$PIPELINE_PROJECT"
+          node --import "$PIPELINE_RUNTIME/node_modules/tsx/dist/loader.mjs" scripts/run-pipeline.ts --daily-only
       - name: Run summary
         if: always()
         shell: bash
@@ -134,7 +153,7 @@ jobs:
             echo '### Korea Brief data update'
             echo "- Mode: $RUN_MODE"
             echo "- Result: $RUN_RESULT"
-            echo '- News, AI summaries and community observations are written to the existing Supabase table.'
+            echo '- News, company disclosures, daily briefs and community observations are written to the existing Supabase table.'
             echo '- A failed source may make the job fail after other records have already been committed; inspect the counters in the logs.'
             echo '- No source-code commit or Vercel redeployment is required for data-only updates.'
           } >> "$GITHUB_STEP_SUMMARY"

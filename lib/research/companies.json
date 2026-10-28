@@ -1,0 +1,223 @@
+[
+  {
+    "id": "samsung",
+    "name": "三星电子",
+    "name_ko": "삼성전자",
+    "name_en": "Samsung Electronics",
+    "stock_code": "005930",
+    "sector": "半导体与电子",
+    "ir_url": "https://www.samsung.com/global/ir/",
+    "focus": "存储周期、AI投资与全球供应链",
+    "aliases": [
+      "Samsung Electronics",
+      "삼성전자"
+    ]
+  },
+  {
+    "id": "sk-hynix",
+    "name": "SK海力士",
+    "name_ko": "SK하이닉스",
+    "name_en": "SK hynix",
+    "stock_code": "000660",
+    "sector": "半导体与电子",
+    "ir_url": "https://www.skhynix.com/ir/UI-FR-IR01/",
+    "focus": "HBM、先进存储与客户集中度",
+    "aliases": [
+      "SK hynix",
+      "SK하이닉스",
+      "SK海力士"
+    ]
+  },
+  {
+    "id": "hyundai-motor",
+    "name": "现代汽车",
+    "name_ko": "현대자동차",
+    "name_en": "Hyundai Motor",
+    "stock_code": "005380",
+    "sector": "汽车与电池",
+    "ir_url": "https://www.hyundai.com/worldwide/en/company/ir",
+    "focus": "全球产能、关税与电动化转型",
+    "aliases": [
+      "Hyundai Motor",
+      "현대자동차",
+      "现代汽车"
+    ]
+  },
+  {
+    "id": "kia",
+    "name": "起亚",
+    "name_ko": "기아",
+    "name_en": "Kia",
+    "stock_code": "000270",
+    "sector": "汽车与电池",
+    "ir_url": "https://worldwide.kia.com/en/company/investor-relations",
+    "focus": "出口市场、电动化与产品组合",
+    "aliases": [
+      "Kia",
+      "기아",
+      "起亚"
+    ]
+  },
+  {
+    "id": "lg-energy",
+    "name": "LG新能源",
+    "name_ko": "LG에너지솔루션",
+    "name_en": "LG Energy Solution",
+    "stock_code": "373220",
+    "sector": "汽车与电池",
+    "ir_url": "https://www.lgensol.com/kr/investors/electronic-disclosure",
+    "focus": "电池需求、海外产能与补贴制度",
+    "aliases": [
+      "LG Energy Solution",
+      "LG에너지솔루션",
+      "LG新能源"
+    ]
+  },
+  {
+    "id": "samsung-bio",
+    "name": "三星生物制剂",
+    "name_ko": "삼성바이오로직스",
+    "name_en": "Samsung Biologics",
+    "stock_code": "207940",
+    "sector": "生物医药",
+    "ir_url": "https://samsungbiologics.com/ir/overview",
+    "focus": "CDMO产能、订单和全球监管",
+    "aliases": [
+      "Samsung Biologics",
+      "삼성바이오로직스",
+      "三星生物"
+    ]
+  },
+  {
+    "id": "hanwha-aero",
+    "name": "韩华航空航天",
+    "name_ko": "한화에어로스페이스",
+    "name_en": "Hanwha Aerospace",
+    "stock_code": "012450",
+    "sector": "装备与材料",
+    "ir_url": "https://www.hanwhaaerospace.com/eng/ir/ir-event.do",
+    "focus": "防务出口、交付与海外合作",
+    "aliases": [
+      "Hanwha Aerospace",
+      "한화에어로스페이스",
+      "韩华航空"
+    ]
+  },
+  {
+    "id": "hd-heavy",
+    "name": "HD现代重工",
+    "name_ko": "HD현대중공업",
+    "name_en": "HD Hyundai Heavy Industries",
+    "stock_code": "329180",
+    "sector": "装备与材料",
+    "ir_url": "https://hd-hhi.com/en/investors/ir-data/earnings-release",
+    "focus": "造船订单、绿色燃料与全球航运",
+    "aliases": [
+      "HD Hyundai Heavy Industries",
+      "HD현대중공업",
+      "HD现代重工"
+    ]
+  },
+  {
+    "id": "posco",
+    "name": "POSCO Holdings",
+    "name_ko": "POSCO홀딩스",
+    "name_en": "POSCO Holdings",
+    "stock_code": "005490",
+    "sector": "装备与材料",
+    "ir_url": "https://www.posco-inc.com/hs91a1-front/app/en/ir/overview.html",
+    "focus": "钢铁周期、贸易壁垒与电池材料",
+    "aliases": [
+      "POSCO Holdings",
+      "POSCO홀딩스",
+      "浦项控股"
+    ]
+  },
+  {
+    "id": "naver",
+    "name": "NAVER",
+    "name_ko": "네이버",
+    "name_en": "NAVER",
+    "stock_code": "035420",
+    "sector": "平台与AI",
+    "ir_url": "https://www.navercorp.com/en/investment/irUpdates",
+    "focus": "搜索商业化、AI投入与跨境平台",
+    "aliases": [
+      "NAVER",
+      "네이버"
+    ]
+  },
+  {
+    "id": "kakao",
+    "name": "Kakao",
+    "name_ko": "카카오",
+    "name_en": "Kakao",
+    "stock_code": "035720",
+    "sector": "平台与AI",
+    "ir_url": "https://www.kakaocorp.com/ir/main?lang=en",
+    "focus": "平台监管、广告与内容生态",
+    "aliases": [
+      "Kakao",
+      "카카오"
+    ]
+  },
+  {
+    "id": "hybe",
+    "name": "HYBE",
+    "name_ko": "하이브",
+    "name_en": "HYBE",
+    "stock_code": "352820",
+    "sector": "文化与K-pop",
+    "ir_url": "https://hybecorp.com/en/investors/archive/result/",
+    "focus": "海外扩张、艺人/IP组合与Weverse",
+    "aliases": [
+      "HYBE",
+      "하이브"
+    ]
+  },
+  {
+    "id": "sm",
+    "name": "SM Entertainment",
+    "name_ko": "에스엠엔터테인먼트",
+    "name_en": "SM Entertainment",
+    "stock_code": "041510",
+    "sector": "文化与K-pop",
+    "ir_url": "https://www.smentertainment.com/ir/business-results/",
+    "focus": "艺人组合、版权与全球巡演",
+    "aliases": [
+      "SM Entertainment",
+      "에스엠엔터테인먼트",
+      "SM娱乐"
+    ]
+  },
+  {
+    "id": "jyp",
+    "name": "JYP Entertainment",
+    "name_ko": "제이와이피엔터테인먼트",
+    "name_en": "JYP Entertainment",
+    "stock_code": "035900",
+    "sector": "文化与K-pop",
+    "ir_url": "https://www.jype.com/ko/board/ir-data",
+    "focus": "全球巡演、海外本土化与合约",
+    "aliases": [
+      "JYP Entertainment",
+      "JYP Ent",
+      "제이와이피",
+      "JYP"
+    ]
+  },
+  {
+    "id": "cj-enm",
+    "name": "CJ ENM",
+    "name_ko": "씨제이이엔엠",
+    "name_en": "CJ ENM",
+    "stock_code": "035760",
+    "sector": "文化与K-pop",
+    "ir_url": "https://www.cjenm.com/en/investors/ir/",
+    "focus": "音乐/影视、平台分发与国际内容业务",
+    "aliases": [
+      "CJ ENM",
+      "씨제이이엔엠"
+    ]
+  }
+]

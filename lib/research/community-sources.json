@@ -38,7 +38,7 @@
     "max_items": 20,
     "comment_videos": 5,
     "comments_per_video": 8,
-    "scope": "官方Data API mostPopular，regionCode=KR，最多20个视频及前5个视频各8条按relevance排序的公开顶层评论；视频累计计数不是24小时新增量；用户国籍未知，未观看视频或读取字幕"
+    "scope": "官方Data API韩国地区mostPopular榜单，按视频累计评论/点赞从最多20条中选择5条；每视频relevance和time各20条候选，保留含韩文评论，选6条候选内高互动及2条近期样本。地区与语言不证明用户国籍；累计计数不是24小时新增量。"
   },
   {
     "id": "naver-cafe",

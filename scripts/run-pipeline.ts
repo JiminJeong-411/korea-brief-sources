@@ -1,3 +1,8 @@
+import {summarizeTrends,TREND_URL,TREND_VERSION} from '../lib/research/trends';
+import companies from '../lib/research/companies.json';
+import {buildCompanySnapshot,loadCorpCodes} from '../lib/research/company-collector';
+import {generateDaily} from '../lib/research/daily';
+import {COMPANY_VERSION,DAILY_VERSION,companyURL,dailyURL,koreaDay,isNewsRecord,primaryRecord} from '../lib/research/records';
 import {ENTERTAINMENT_VERSION,isKpop,lowValueEntertainment} from '../lib/research/entertainment';
 import {readEvent,CLUSTER_VERSION,type ClusterArticle} from '../lib/research/clustering';
 import {singleEvent,describeEvent,findMatchingEvent} from '../lib/research/event-matching';
@@ -109,6 +114,10 @@ const backfill=process.argv.includes('--reassess-existing');
 const clusterOnly=process.argv.includes('--cluster-existing');
 const clusterFlag=process.argv.find(s=>s.startsWith('--cluster-limit='));
 const clusterLimit=clusterFlag?Number(clusterFlag.split('=')[1]):120;
+const companiesOnly=process.argv.includes('--companies-only');
+const dailyOnly=process.argv.includes('--daily-only');
+const skipDaily=process.argv.includes('--skip-daily');
+const skipCompanies=process.argv.includes('--skip-companies');
 const communityOnly=process.argv.includes('--community-only');
 const skipCommunity=process.argv.includes('--skip-community');
 const flag=process.argv.find(s=>s.startsWith('--limit='));
@@ -122,6 +131,7 @@ async function fetchPublic(url:string){
   return retry(async()=>{const r=await fetch(url,{headers:{apikey:key,Authorization:`Bearer ${key}`},cache:'no-store',signal:AbortSignal.timeout(20000)});if(!r.ok)throw Object.assign(Error(`公开 REST HTTP ${r.status}`),{status:r.status});return r;});
 }
 async function preflight(): Promise<Set<string>> {
+  if([companiesOnly,dailyOnly,communityOnly,clusterOnly,backfill].filter(Boolean).length>1)throw Error('companies/daily/community/cluster/reassess 仅可选择一种运行模式');
   if(!process.env.DATABASE_URL)throw new Error('未配置 DATABASE_URL；请在原项目根目录使用原来的 .env 运行。');
   if(!Number.isInteger(clusterLimit)||clusterLimit<0||clusterLimit>1000)throw Error('--cluster-limit 必须是0–1000');
   if(!Number.isInteger(itemLimit)||itemLimit<1)throw new Error('--limit 必须是正整数');
@@ -171,7 +181,7 @@ export async function executePipeline(){
   const eventRows=new Map<any,ClusterArticle>();
   function asArticle(r:any):ClusterArticle|null{
     const sources=parseSources(r.cluster_urls),primary=sources.find(x=>cleanArticleUrl(x.url)===cleanArticleUrl(r.raw_url))||sources[0];
-    if(primary?.content_type==='community_digest')return null;
+    if(!isNewsRecord(r))return null;
     return {id:r.id,url:r.raw_url,title:r.translated_title||r.raw_title,originalTitle:r.raw_title,excerpt:primary?.excerpt||'',date:primary?.published_at||r.created_at||'',category:primary?.intelligence?.category||normalizeCategory(r.assigned_category),importance:Number(primary?.intelligence?.importance)||0,event:readEvent(primary?.event)};
   }
   const keyOf=(url:string)=>url.replace(/^(https?:\/\/)(?:www\.)/i,'$1');
@@ -180,8 +190,8 @@ export async function executePipeline(){
     if(!existingByUrl.has(keyOf(u)))existingByUrl.set(keyOf(u),r);
     const article=asArticle(r);if(article)eventRows.set(r.id,article);
   }
-  const needsEntertainmentReview=(r:any)=>{const p=parseSources(r?.cluster_urls)[0];return r&&p?.content_type!=='community_digest'&&(normalizeCategory(r.assigned_category)==='entertainment'||isKpop(r.raw_title,p?.excerpt||'',p?.editorial_focus||(/The Korea Herald.*K-pop|Soompi.*音乐/i.test(r.source_site||'')?'kpop':'')))&&p?.editorial_version!==ENTERTAINMENT_VERSION;};
-  const counts={fetched:0,inserted:0,updated:0,duplicates:0,filtered_noise:0,filtered_sports:0,important:0,featured:0,not_selected:0,failed_sources:0,failed_items:0,community_updated:0,community_unconfigured:0,events_linked:0,cluster_updated:0,cluster_failed:0};
+  const needsEntertainmentReview=(r:any)=>{const p=parseSources(r?.cluster_urls)[0];return r&&isNewsRecord(r)&&(normalizeCategory(r.assigned_category)==='entertainment'||isKpop(r.raw_title,p?.excerpt||'',p?.editorial_focus||(/The Korea Herald.*K-pop|Soompi.*音乐/i.test(r.source_site||'')?'kpop':'')))&&p?.editorial_version!==ENTERTAINMENT_VERSION;};
+  const counts={fetched:0,inserted:0,updated:0,duplicates:0,filtered_noise:0,filtered_sports:0,important:0,featured:0,not_selected:0,failed_sources:0,failed_items:0,community_updated:0,community_unconfigured:0,events_linked:0,cluster_updated:0,cluster_failed:0,companies_updated:0,companies_partial:0,daily_updated:0};
   let analyzed=0;const verifyIds:any[]=[];const attempted=new Set<string>();
   async function processItem(item:any,feed:any,old?:any){
     if(analyzed>=itemLimit)return;
@@ -238,7 +248,9 @@ export async function executePipeline(){
       }else counts.duplicates++;
     }catch(e){counts.failed_items++;console.warn(`条目失败：${title.slice(0,55)}；${describeError(e,stage)}`);}
   }
-  if(clusterOnly){
+  if(dailyOnly||companiesOnly){
+    console.log(dailyOnly?'仅生成已入库数据的日报，不重新采集新闻':'仅采集公司公开披露');
+  }else if(clusterOnly){
     const cutoff=Date.now()-backfillDays*86400000;
     const candidates=[...previous.rows as any[]].filter(r=>{
       const article=asArticle(r);return article&&Date.parse(article.date)>=cutoff&&(!article.event?.checked||article.event.version!==CLUSTER_VERSION)&&parseSources(r.cluster_urls).some(s=>s.intelligence?.importance>=60);
@@ -261,7 +273,7 @@ export async function executePipeline(){
     const cutoff=new Date(Date.now()-backfillDays*86400000).toISOString();
     // Reassessment reads actual stored rows, rather than only items still in RSS.
     const rows=await db.execute(sql`SELECT * FROM public.english_hot_news WHERE created_at >= ${cutoff} ORDER BY id DESC LIMIT 5000`);
-    const candidates=(rows.rows as any[]).filter(r=>{const s=parseSources(r.cluster_urls);return !s.some(x=>x.content_type==='community_digest')&&(reanalyze||!s.some(x=>x.analysis_version===VERSION)||needsEntertainmentReview(r));});
+    const candidates=(rows.rows as any[]).filter(r=>{const s=parseSources(r.cluster_urls);return isNewsRecord(r)&&(reanalyze||!s.some(x=>x.analysis_version===VERSION)||needsEntertainmentReview(r));});
     console.log(`历史重评：最近 ${backfillDays} 天 ${candidates.length} 条待评估；本次最多 ${itemLimit} 条；不删除记录。`);
     for(const r of candidates){
       if(analyzed>=itemLimit)break;
@@ -291,7 +303,7 @@ export async function executePipeline(){
     for(const {feed,item} of queue){if(analyzed>=itemLimit)break;await processItem(item,feed);}
   }
 
-  if(!backfill&&!clusterOnly&&!skipCommunity){
+  if(!backfill&&!clusterOnly&&!skipCommunity&&!companiesOnly&&!dailyOnly){
     const sources=JSON.parse(fs.readFileSync(path.resolve(process.cwd(),'lib/research/community-sources.json'),'utf8'));
     for(const source of sources.filter((s:any)=>s.enabled&&s.adapter!=='reference')){
       try{
@@ -299,7 +311,7 @@ export async function executePipeline(){
         if(!samples.length){console.log(`社区 ${source.name}：没有可用样本`);continue;}
         const existing=(await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${source.homepage} LIMIT 1`)).rows[0] as any;
         const old=parseSources(existing?.cluster_urls)[0];
-        const signature=createHash('sha256').update(JSON.stringify(samples.map(s=>[s.url,s.title,s.excerpt,(s.commentsSample||[]).map(c=>[c.ref,c.excerpt])]))).digest('hex');
+        const signature=createHash('sha256').update(JSON.stringify(samples.map(s=>[s.url,s.title,s.excerpt,(s.commentsSample||[]).map(c=>[c.ref,c.excerpt,c.selection])]))).digest('hex');
         // Reuse the AI summary when sample content is unchanged; refresh real heat snapshots.
         const unchanged=old?.community?.version===COMMUNITY_VERSION&&old?.sample_signature===signature;
         const refreshed=unchanged?refreshDigest(old.community,samples):await summarizeCommunity(samples,source);
@@ -309,10 +321,60 @@ export async function executePipeline(){
         const values:Record<string,any>={raw_url:source.homepage,raw_title:digest.title,translated_title:digest.title,source_site:source.name,
           assigned_category:'社会',ai_score:1,ai_summary:digest.summary||'本次样本中暂无达到重要性门槛的主题',deep_report:null,
           cluster_urls:JSON.stringify([primary])};
-        if(columns.has('region'))values.region='东亚';if(columns.has('has_report'))values.has_report=true;
+        if(columns.has('region'))values.region='东亚';if(columns.has('has_report'))values.has_report=false;
         const id=await writeRecord(existing,values);if(id!==undefined){counts.community_updated++;verifyIds.push(id);}
         console.log(`社区 ${source.name}：采样 ${samples.length} 条，保留 ${digest.themes.length} 个主题${unchanged?'（复用摘要，更新热度）':''}`);
       }catch(e:any){if(e.code==='NOT_CONFIGURED'){counts.community_unconfigured++;console.log(e.message);}else{counts.failed_sources++;console.warn(describeError(e,`社区 ${source.name}`));}}
+    }
+  }
+  if(!backfill&&!clusterOnly&&!skipCommunity&&!companiesOnly&&!dailyOnly){
+    try{
+      const rows=(await db.execute(sql`SELECT * FROM public.english_hot_news ORDER BY id DESC LIMIT 5000`)).rows as any[];
+      const existing=(await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${TREND_URL} LIMIT 1`)).rows[0] as any;
+      const trends=await summarizeTrends(rows,primaryRecord(existing)?.trends);
+      const values:Record<string,any>={raw_url:TREND_URL,raw_title:'韩国平台热门趋势',translated_title:'韩国平台热门趋势',source_site:'Korea Brief 舆情观察',assigned_category:'社会',ai_score:1,ai_summary:trends.trends.map((t:any)=>t.title).join('；'),deep_report:null,
+        cluster_urls:JSON.stringify([{url:TREND_URL,content_type:'community_overview',analysis_version:TREND_VERSION,trends}])};
+      if(columns.has('has_report'))values.has_report=false;
+      const id=await writeRecord(existing,values);if(id!==undefined){verifyIds.push(id);counts.community_updated++;}
+      if(trends.generation==='source_index')counts.failed_sources++;
+      console.log(`舆情趋势：${trends.coverage.platforms} 个平台 / ${trends.trends.length} 个合并主题 / ${trends.generation}`);
+    }catch(e){counts.failed_items++;console.warn(describeError(e,'舆情趋势汇总'));}
+  }
+  if(!backfill&&!clusterOnly&&!communityOnly&&!dailyOnly&&!skipCompanies){
+    let codes=new Map<string,any>();
+    try{codes=await loadCorpCodes();}catch{counts.failed_sources++;console.warn('DART公司代码目录读取失败；核对DART_API_KEY、请求额度与接口连通性。本轮仅更新官网，历史财务数据保留');}
+    for(const company of companies){
+      try{
+        const url=companyURL(company.stock_code),existing=(await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${url} LIMIT 1`)).rows[0] as any;
+        const old=primaryRecord(existing)?.company;
+        // A missing key is an explicit unavailable state. Do not expose admin configuration in public UI.
+        const snapshot=await buildCompanySnapshot(company,codes.get(company.stock_code),old);
+        const values:Record<string,any>={raw_url:url,raw_title:company.name+' · 公司观察',translated_title:company.name+' · 公司观察',source_site:company.name,
+          assigned_category:'经济',ai_score:1,ai_summary:company.focus,deep_report:null,
+          cluster_urls:JSON.stringify([{url,content_type:'company_profile',analysis_version:COMPANY_VERSION,company:snapshot}])};
+        if(columns.has('region'))values.region='东亚';if(columns.has('has_report'))values.has_report=false;
+        const id=await writeRecord(existing,values);if(id!==undefined){counts.companies_updated++;verifyIds.push(id);if(snapshot.status!=='ok')counts.companies_partial++;}
+        if(snapshot.dartStatus==='failed'||snapshot.errors.some((s:string)=>/财务读取失败|AI观察未生成/.test(s)))counts.failed_sources++;
+        console.log(`公司 ${company.name}：财报 ${snapshot.financials.length} 期 / 重点公告 ${snapshot.disclosures.length} 条 / DART ${snapshot.dartStatus} / IR ${snapshot.ir?.status||'unavailable'}`);
+      }catch(e){counts.failed_items++;console.warn(describeError(e,`公司 ${company.name}`));}
+    }
+    if(!process.env.DART_API_KEY)console.log('公司财务未接入：管理员可在同一采集环境添加 DART_API_KEY；官网索引仍会尝试读取。');
+  }
+  if(!backfill&&!clusterOnly&&!communityOnly&&!companiesOnly&&!skipDaily){
+    const rows=(await db.execute(sql`SELECT * FROM public.english_hot_news ORDER BY id DESC LIMIT 5000`)).rows as any[];
+    // The first scheduled run of a day can close yesterday; today's edition remains an as-of snapshot.
+    for(const day of [koreaDay(Date.now()-86400000),koreaDay()]){
+      try{
+        const url=dailyURL(day),existing=(await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${url} LIMIT 1`)).rows[0] as any;
+        const digest=await generateDaily(rows,day,primaryRecord(existing)?.daily);
+        const values:Record<string,any>={raw_url:url,raw_title:digest.title,translated_title:digest.title,source_site:'Korea Brief 日报',assigned_category:'经济',ai_score:1,
+          ai_summary:digest.sections.map((s:any)=>s.title).join('；')||'当日已收录资料索引',deep_report:null,
+          cluster_urls:JSON.stringify([{url,content_type:'daily_digest',analysis_version:DAILY_VERSION,daily:digest}])};
+        if(columns.has('has_report'))values.has_report=false;
+        const id=await writeRecord(existing,values);if(id!==undefined){counts.daily_updated++;verifyIds.push(id);}
+        if(digest.generation==='evidence_index')counts.failed_sources++;
+        console.log(`日报 ${day}：${digest.coverage.events} 个已收录事件 / ${digest.sections.length} 节 / ${digest.complete?'窗口已结束':'截至本轮采样'} / ${digest.generation}`);
+      }catch(e){counts.failed_items++;console.warn(describeError(e,'日报 '+day));}
     }
   }
   const clusterPending=[...eventRows.values()].filter(r=>r.importance>=60&&Date.parse(r.date)>=Date.now()-backfillDays*86400000&&(!r.event?.checked||r.event.version!==CLUSTER_VERSION)).length;
