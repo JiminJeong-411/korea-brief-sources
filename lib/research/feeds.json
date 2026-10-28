@@ -1907,7 +1907,7 @@
     "ingest": "rss",
     "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://variety.com",
-    "purpose": "文化作品、主要奖项与娱乐产业重大变化；不把普通八卦作为重点新闻。",
+    "purpose": "补充全球重大娱乐产业变化及K-pop相关报道，降低普通好莱坞新闻占比。",
     "priority": 1,
     "validation": {
       "checked_at": "2026-10-21T20:20:44.376Z",
@@ -1924,7 +1924,8 @@
     },
     "availability": "active",
     "disabled_reason": "收束来源：重复覆盖、地方杂讯或泛娱乐/本地体育；保留目录待需要时启用",
-    "max_items": 12
+    "max_items": 6,
+    "focus": "kpop-first"
   },
   {
     "id": "en-067",
@@ -2746,27 +2747,15 @@
     "country": "韩国",
     "source_type": "商业媒体",
     "category": "娱乐",
-    "enabled": false,
+    "enabled": true,
     "ingest": "rss",
-    "purpose": "区域新闻、经济与社会变化；结合原文识别韩国企业的潜在影响。",
+    "purpose": "K-pop重点：公司战略、发行与巡演、合约版权、海外市场；过滤普通八卦和重复曝光。",
     "catalog_revision": "2026-10-22-sources-1",
     "homepage": "https://www.koreaherald.com",
     "priority": 1,
-    "validation": {
-      "checked_at": "2026-10-21T20:21:06.852Z",
-      "status": "ok",
-      "http_status": 200,
-      "final_url": "https://www.koreaherald.com/rss/kh_Kpop",
-      "parsed": 28,
-      "dated": 28,
-      "recent": 28,
-      "usable": 28,
-      "latest_at": "2026-10-21T08:58:14.000Z",
-      "error": null,
-      "environment": "verification-host-node"
-    },
-    "availability": "active",
-    "disabled_reason": "本轮用户环境读取失败，暂停自动采集"
+    "availability": "configured",
+    "focus": "kpop",
+    "max_items": 24
   },
   {
     "id": "kr-koreatimes-business",
@@ -3573,7 +3562,7 @@
     "category": "娱乐",
     "enabled": true,
     "ingest": "rss",
-    "purpose": "重要政策、产业与社会变化；通过重要性筛选后，再独立评估韩国关联。",
+    "purpose": "K-pop企业与全球音乐产业：发行、版权、平台、巡演、并购和海外业务。",
     "catalog_revision": "2026-10-27-coverage-2",
     "homepage": "https://www.musicbusinessworldwide.com",
     "priority": 1,
@@ -3591,7 +3580,8 @@
       "environment": "verification-host-node"
     },
     "availability": "configured",
-    "max_items": 12
+    "max_items": 16,
+    "focus": "kpop-first"
   },
   {
     "id": "industry-digital-music",
@@ -4061,8 +4051,27 @@
     "enabled": true,
     "ingest": "rss",
     "coverage_region": "east-asia",
-    "max_items": 24,
+    "max_items": 30,
     "catalog_revision": "2026-10-27-coverage-2",
-    "purpose": "韩国文化作品、主要奖项和文化产业"
+    "purpose": "韩国娱乐优先K-pop产业与重要音乐活动，同时保留重大文化新闻。",
+    "focus": "kpop-first"
+  },
+  {
+    "id": "kpop-soompi-music",
+    "name": "Soompi · 音乐",
+    "url": "https://www.soompi.com/category/music/feed",
+    "homepage": "https://www.soompi.com/category/music",
+    "language": "en",
+    "country": "韩国",
+    "coverage_region": "east-asia",
+    "category": "娱乐",
+    "enabled": true,
+    "ingest": "rss",
+    "source_type": "音乐媒体",
+    "focus": "kpop",
+    "priority": 1,
+    "max_items": 24,
+    "availability": "configured",
+    "purpose": "K-pop作品、重要回归、巡演及国际市场表现；经重要性筛选，不把日常榜单/照片/播放量当重大情报。"
   }
 ]

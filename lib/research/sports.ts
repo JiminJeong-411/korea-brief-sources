@@ -29,17 +29,13 @@ export function keepSportsNews(category:string,title:string,excerpt:string):bool
  return false;
 }
 // Stable key only for the actual award result; previews, leaks and features never enter this cluster.
+// Compatibility key for older callers; the universal event engine does not depend on this key.
 export function sportsEventKey(title:string,excerpt:string,publishedAt:string):string|null{
  const m=majorSportsMilestone(title,excerpt);if(m?.id!=='ballon-dor-result')return null;
- const publishedYear=new Date(publishedAt).getUTCFullYear();
- const reportedYear=Number(title.match(/\b20\d{2}\b/)?.[0]);
- const year=String(reportedYear&&Math.abs(reportedYear-publishedYear)<=1?reportedYear:publishedYear);
- if(!/^20\d{2}$/.test(year))return null;
- const head=text(title);
- const combined=/women|féminin|feminin|putellas|bonmat|女子|女足|여자|여성|푸테야스|\bkane\b|男子|男足|케인|남자/i.test(head)?head:text(title+' '+excerpt);
- const women=/women|féminin|feminin|putellas|bonmat|女子|女足|여자|여성|푸테야스/i.test(combined);
- const men=/\bmen'?s?\b|\bkane\b|\bmbapp|\byamal\b|男子|男足|케인|남자/i.test(combined);
- if(women&&men)return null;
- if(!women&&!men)return null;
- return `ballon-dor:${year}:${women?'women':'men'}`;
+ const y=new Date(publishedAt).getUTCFullYear();if(!Number.isFinite(y))return null;
+ const head=text(title),reported=Number(head.match(/\b20\d{2}\b/)?.[0]);
+ const year=reported&&Math.abs(reported-y)<=1?reported:y;
+ const women=/women|féminin|putellas|bonmat|女子|女足|여자|여성|푸테야스/i.test(head);
+ const men=/\bmen'?s?\b|\bkane\b|\bmbapp|\byamal\b|男子|男足|케인|남자/i.test(head);
+ return women===men?null:`ballon-dor:${year}:${women?'women':'men'}`;
 }

@@ -1,4 +1,5 @@
-import {readEvent,type ClusterArticle} from '../lib/research/clustering';
+import {ENTERTAINMENT_VERSION,isKpop,lowValueEntertainment} from '../lib/research/entertainment';
+import {readEvent,CLUSTER_VERSION,type ClusterArticle} from '../lib/research/clustering';
 import {singleEvent,describeEvent,findMatchingEvent} from '../lib/research/event-matching';
 import {chooseCandidates,fairCandidateQueue} from '../lib/research/candidates';
 import {keepSportsNews,majorSportsMilestone} from '../lib/research/sports';
@@ -171,7 +172,7 @@ export async function executePipeline(){
   function asArticle(r:any):ClusterArticle|null{
     const sources=parseSources(r.cluster_urls),primary=sources.find(x=>cleanArticleUrl(x.url)===cleanArticleUrl(r.raw_url))||sources[0];
     if(primary?.content_type==='community_digest')return null;
-    return {id:r.id,url:r.raw_url,title:r.translated_title||r.raw_title,originalTitle:r.raw_title,excerpt:primary?.excerpt||'',date:primary?.published_at||r.created_at||'',category:primary?.intelligence?.category||normalizeCategory(r.assigned_category),event:readEvent(primary?.event)};
+    return {id:r.id,url:r.raw_url,title:r.translated_title||r.raw_title,originalTitle:r.raw_title,excerpt:primary?.excerpt||'',date:primary?.published_at||r.created_at||'',category:primary?.intelligence?.category||normalizeCategory(r.assigned_category),importance:Number(primary?.intelligence?.importance)||0,event:readEvent(primary?.event)};
   }
   const keyOf=(url:string)=>url.replace(/^(https?:\/\/)(?:www\.)/i,'$1');
   for(const r of previous.rows as any[]){
@@ -179,6 +180,7 @@ export async function executePipeline(){
     if(!existingByUrl.has(keyOf(u)))existingByUrl.set(keyOf(u),r);
     const article=asArticle(r);if(article)eventRows.set(r.id,article);
   }
+  const needsEntertainmentReview=(r:any)=>{const p=parseSources(r?.cluster_urls)[0];return r&&p?.content_type!=='community_digest'&&(normalizeCategory(r.assigned_category)==='entertainment'||isKpop(r.raw_title,p?.excerpt||'',p?.editorial_focus||(/The Korea Herald.*K-pop|Soompi.*音乐/i.test(r.source_site||'')?'kpop':'')))&&p?.editorial_version!==ENTERTAINMENT_VERSION;};
   const counts={fetched:0,inserted:0,updated:0,duplicates:0,filtered_noise:0,filtered_sports:0,important:0,featured:0,not_selected:0,failed_sources:0,failed_items:0,community_updated:0,community_unconfigured:0,events_linked:0,cluster_updated:0,cluster_failed:0};
   let analyzed=0;const verifyIds:any[]=[];const attempted=new Set<string>();
   async function processItem(item:any,feed:any,old?:any){
@@ -196,19 +198,19 @@ export async function executePipeline(){
       let existing=old||existingByUrl.get(key);
       if(!existing){const r=await db.execute(sql`SELECT * FROM public.english_hot_news WHERE raw_url=${url} OR raw_url=${String(item.link)} LIMIT 1`);existing=r.rows[0];}
       const oldSources=parseSources(existing?.cluster_urls);
-      if(existing&&!reanalyze&&oldSources.some(s=>s.analysis_version===VERSION)){counts.duplicates++;return;}
-      const noise=obviousNoise(title),excludedSport=!keepSports(seed,title,excerpt);
+      if(existing&&!reanalyze&&oldSources.some(s=>s.analysis_version===VERSION)&&!needsEntertainmentReview(existing)){counts.duplicates++;return;}
+      const noise=obviousNoise(title)||(seed==='entertainment'&&lowValueEntertainment(title)),excludedSport=!keepSports(seed,title,excerpt);
       if(noise||excludedSport){
         if(noise)counts.filtered_noise++;else counts.filtered_sports++;
         if(existing){
-          const primary={...(oldSources[0]||{}),url:existing.raw_url,title,content_type:'news',analysis_version:VERSION,screening:{version:VERSION,eligible:false,reason:noise?'明确琐事/博彩等低价值格式':'非重点本地体育赛况'}};
+          const primary={...(oldSources[0]||{}),url:existing.raw_url,title,content_type:'news',analysis_version:VERSION,editorial_version:ENTERTAINMENT_VERSION,screening:{version:VERSION,eligible:false,reason:noise?'明确琐事/博彩等低价值格式':'非重点本地体育赛况'}};
           const id=await writeRecord(existing,{cluster_urls:JSON.stringify([primary,...oldSources.slice(1)])});
           if(id!==undefined){counts.updated++;verifyIds.push(id);}
         }
         return;
       }
       analyzed++;stage='DeepSeek 新闻评估';
-      const analysis=await evaluateGeopoliticalRisk(title,CATEGORY_LABELS[seed],excerpt);
+      const analysis=await evaluateGeopoliticalRisk(title,CATEGORY_LABELS[seed],excerpt,{source:feed.name,focus:feed.focus});
       const category=analysis.intelligence.category;
       const regions=getValidRegionIds(analysis.region,title+' '+excerpt);
       const names:Record<string,string>={'east-asia':'东亚','southeast-asia':'东南亚',europe:'欧洲','north-america':'北美','south-america':'南美',africa:'非洲',oceania:'大洋洲','middle-east':'中东'};
@@ -218,7 +220,7 @@ export async function executePipeline(){
         try{event=await findMatchingEvent(article,[...eventRows.values()],clusterBudget);}catch(e){counts.cluster_failed++;console.warn(describeError(e,'事件聚合；新闻仍将保存，下轮重试'));}
       }else event.checked=true;
       if(event.anchorUrl!==singleEvent(url).anchorUrl)counts.events_linked++;
-      const primary={event,source:feed.name||new URL(url).hostname,url,title,excerpt,published_at:publishedAt,regions,
+      const primary={event,editorial_version:ENTERTAINMENT_VERSION,editorial_focus:feed.focus||'',source:feed.name||new URL(url).hostname,url,title,excerpt,published_at:publishedAt,regions,
         analysis_version:VERSION,score_scale:10,content_type:'news',source_country:feed.country||'',intelligence:analysis.intelligence};
       const values:Record<string,any>={raw_title:title,translated_title:analysis.titleZh,raw_url:existing?.raw_url||url,
         source_site:feed.name||new URL(url).hostname,assigned_category:CATEGORY_LABELS[category],ai_score:analysis.score,
@@ -239,7 +241,7 @@ export async function executePipeline(){
   if(clusterOnly){
     const cutoff=Date.now()-backfillDays*86400000;
     const candidates=[...previous.rows as any[]].filter(r=>{
-      const article=asArticle(r);return article&&Date.parse(article.date)>=cutoff&&(!article.event?.checked)&&parseSources(r.cluster_urls).some(s=>s.intelligence);
+      const article=asArticle(r);return article&&Date.parse(article.date)>=cutoff&&(!article.event?.checked||article.event.version!==CLUSTER_VERSION)&&parseSources(r.cluster_urls).some(s=>s.intelligence?.importance>=60);
     }).sort((a,b)=>Number(a.id)-Number(b.id)).slice(0,itemLimit);
     console.log(`历史事件聚合：${candidates.length} 条待处理；AI调用上限 ${clusterLimit}；保留每篇原文，不删库。`);
     for(const row of candidates){
@@ -259,13 +261,13 @@ export async function executePipeline(){
     const cutoff=new Date(Date.now()-backfillDays*86400000).toISOString();
     // Reassessment reads actual stored rows, rather than only items still in RSS.
     const rows=await db.execute(sql`SELECT * FROM public.english_hot_news WHERE created_at >= ${cutoff} ORDER BY id DESC LIMIT 5000`);
-    const candidates=(rows.rows as any[]).filter(r=>{const s=parseSources(r.cluster_urls);return !s.some(x=>x.content_type==='community_digest')&&(reanalyze||!s.some(x=>x.analysis_version===VERSION));});
+    const candidates=(rows.rows as any[]).filter(r=>{const s=parseSources(r.cluster_urls);return !s.some(x=>x.content_type==='community_digest')&&(reanalyze||!s.some(x=>x.analysis_version===VERSION)||needsEntertainmentReview(r));});
     console.log(`历史重评：最近 ${backfillDays} 天 ${candidates.length} 条待评估；本次最多 ${itemLimit} 条；不删除记录。`);
     for(const r of candidates){
       if(analyzed>=itemLimit)break;
       const s=parseSources(r.cluster_urls).find(x=>cleanArticleUrl(x.url)===cleanArticleUrl(r.raw_url))||parseSources(r.cluster_urls)[0];
       // Old AI summaries are not original evidence. A missing RSS excerpt stays missing.
-      await processItem({title:r.raw_title,link:r.raw_url,contentSnippet:s?.excerpt||r.original_excerpt||'',isoDate:s?.published_at||r.created_at},{name:r.source_site,category:r.assigned_category},r);
+      await processItem({title:r.raw_title,link:r.raw_url,contentSnippet:s?.excerpt||r.original_excerpt||'',isoDate:s?.published_at||r.created_at},{name:r.source_site,category:r.assigned_category,focus:s?.editorial_focus||(/The Korea Herald.*K-pop|Soompi.*音乐/i.test(r.source_site||'')?'kpop':'')},r);
     }
     if(candidates.length>itemLimit)console.log('可能还有旧记录未重评；重复相同命令会跳过已完成的新版本记录。');
   }else if(!communityOnly){
@@ -313,7 +315,8 @@ export async function executePipeline(){
       }catch(e:any){if(e.code==='NOT_CONFIGURED'){counts.community_unconfigured++;console.log(e.message);}else{counts.failed_sources++;console.warn(describeError(e,`社区 ${source.name}`));}}
     }
   }
-  console.log('实际处理结果：'+JSON.stringify({...counts,cluster_ai_calls:clusterLimit-clusterBudget.remaining}));
+  const clusterPending=[...eventRows.values()].filter(r=>r.importance>=60&&Date.parse(r.date)>=Date.now()-backfillDays*86400000&&(!r.event?.checked||r.event.version!==CLUSTER_VERSION)).length;
+  console.log('实际处理结果：'+JSON.stringify({...counts,cluster_ai_calls:clusterLimit-clusterBudget.remaining,cluster_pending_in_read_window:clusterPending}));
   if(verifyIds.length){
     try{
       const ids=[...new Set([verifyIds[0],verifyIds[verifyIds.length-1]])];

@@ -2,7 +2,7 @@ name: Korea Brief data update
 
 on:
   schedule:
-    - cron: '23 */2 * * *'
+    - cron: '23 */12 * * *'
   workflow_dispatch:
     inputs:
       mode:

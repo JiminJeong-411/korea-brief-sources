@@ -1,3 +1,7 @@
+import {TimedCache} from '../../../../lib/research/cache';
+import {entertainmentPriority,isKpop,lowValueEntertainment} from '../../../../lib/research/entertainment';
+const publicRowsCache=new TimedCache<any[]>(5*60_000,4);
+import {paginate,NEWS_PAGE_SIZE} from '../../../../lib/research/pagination';
 import {clusterPublicArticles,mergeSourceLinks,readEvent,CLUSTER_VERSION} from '../../../../lib/research/clustering';
 import {keepSportsNews,majorSportsMilestone} from '../../../../lib/research/sports';
 import communityCatalog from '../../../../lib/research/community-sources.json';
@@ -122,7 +126,7 @@ export async function GET(request: Request) {
   const safeFallback = {
     news: [], hot: [], items: [], events: [],
     counts: { news: 0, assessed: 0, reports: 0 },
-    thresholds: THRESHOLDS, total: 0, page: 1, hasMore: false, has_more: false, regions: []
+    thresholds: THRESHOLDS, total: 0, page: 1,page_size:NEWS_PAGE_SIZE,total_pages:1, hasMore: false, has_more: false, regions: []
   };
 
   try {
@@ -133,7 +137,6 @@ export async function GET(request: Request) {
     if (!supabaseUrl || !anonKey) return Response.json({...safeFallback,success:false,error:'NEWS_CONFIG_MISSING'}, {status:503,headers:{'Cache-Control':'no-store'}});
 
     const tableName = "english_hot_news";
-    const rawRecords:any[]=[];
     const pageLimit=500;
     const params=new URLSearchParams({select:'*',order:'id.desc',limit:String(pageLimit)});
     const briefRequest=url.pathname.endsWith('/brief');
@@ -141,6 +144,7 @@ export async function GET(request: Request) {
     if(modeParam==='community'){
       params.set('raw_url','in.('+communityCatalog.filter(s=>s.enabled).map(s=>JSON.stringify(s.homepage)).join(',')+')');
     }
+    const loadRecords=async()=>{const rawRecords:any[]=[];
     for(let offset=0;offset<(modeParam==='community'?500:2000);offset+=pageLimit){
       params.set('offset',String(offset));
       const res=await retry(async()=>{
@@ -153,6 +157,8 @@ export async function GET(request: Request) {
       if(!Array.isArray(rows))throw Error('NEWS_RESPONSE_INVALID');
       rawRecords.push(...rows);if(rows.length<pageLimit)break;
     }
+      return rawRecords;};
+    const rawRecords=briefRequest?await loadRecords():await publicRowsCache.get([supabaseUrl,anonKey,modeParam==='community'?'community':'news'].join('|'),loadRecords,url.searchParams.get('fresh')==='1');
     if(briefRequest){
       const row=rawRecords[0],primary=sourceArticles(row?.cluster_urls).find(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row?.raw_url))||sourceArticles(row?.cluster_urls)[0];
       const assessment=readIntelligence(primary?.intelligence,plainText(row?.raw_title)+' '+plainText(primary?.excerpt),{title:plainText(row?.raw_title)});
@@ -179,7 +185,8 @@ export async function GET(request: Request) {
         if(q&&!JSON.stringify([c.title,c.summary,c.themes]).toLowerCase().includes(q))return [];
         return [{id:r.id,type:'community',title:c.title,url:r.raw_url,source:r.source_site,date:c.observedAt,summary:c.summary,community:c}];
       }).sort((a,b)=>b.date.localeCompare(a.date));
-      return Response.json({...safeFallback,success:true,items,news:[],total:items.length,counts:{news:0,assessed:0,reports:0},selection_version:SELECTION_VERSION}, {headers:{'Cache-Control':'no-store'}});
+      const pagination=paginate(items,url.searchParams.get('page')||1);
+      return Response.json({...safeFallback,...pagination,hasMore:pagination.has_more,...(url.searchParams.get('browse')==='1'?{browse_items:items}:{}),success:true,news:[],counts:{news:0,assessed:0,reports:0},selection_version:SELECTION_VERSION}, {headers:{'Cache-Control':'no-store'}});
     }
     let pendingAssessment=0,belowImportance=0,sportsExcluded=0,needsReassessment=0;
 
@@ -190,7 +197,7 @@ export async function GET(request: Request) {
       const sources=sourceArticles(row.cluster_urls),primary=sources.find(s=>cleanArticleUrl(s.url)===cleanArticleUrl(row.raw_url))||sources[0],event=readEvent(primary?.event);
       if(event&&primary?.content_type!=='community_digest'){
         const list=eventSourceMap.get(event.id)||[];
-        list.push({url:row.raw_url,title:row.raw_title,source:row.source_site,published_at:primary?.published_at||null});
+        list.push({url:row.raw_url,title:row.raw_title,source:row.source_site,published_at:primary?.published_at||null,coverage_kind:event.coverageKind});
         eventSourceMap.set(event.id,list);
       }
     }
@@ -208,10 +215,15 @@ export async function GET(request: Request) {
       if(primary?.intelligence?.version!==SELECTION_VERSION)needsReassessment++;
       if(!assessment){pendingAssessment++;continue;}
       if(!isImportant(assessment)){belowImportance++;continue;}
+      const editorialFocus=primary?.editorial_focus||(/The Korea Herald.*K-pop|Soompi.*音乐/i.test(r.source_site||'')?'kpop':'');
+      const kpop=isKpop(plainText(r.raw_title),evidenceText,editorialFocus);
+      if((assessment.category==='entertainment'||kpop)&&lowValueEntertainment(plainText(r.raw_title))){belowImportance++;continue;}
       const headline = [...new Set([plainText(r.raw_title),title])].filter(Boolean).join(' ');
       const category = assessment.category;
       if (!keepSports(category, headline, evidenceText)){sportsExcluded++;continue;}
-      const dateCandidate = r.published_at || primary?.published_at || r.created_at || '';
+      const publication=r.published_at||primary?.published_at;
+      const publishedAt=Number.isFinite(Date.parse(publication||''))?new Date(publication).toISOString():null;
+      const dateCandidate = publishedAt || r.created_at || '';
       const date = Number.isFinite(Date.parse(dateCandidate)) ? new Date(dateCandidate).toISOString() : '';
       const mappedRegions = getValidRegionIds(r.region || primary?.regions, headline + ' ' + evidenceText);
       const numericScore = assessment.korea;
@@ -228,13 +240,13 @@ export async function GET(request: Request) {
         url: r.raw_url,
         source: r.source_site || '全球信源',
         category,
-        regions: mappedRegions,
-        date,
+        regions: mappedRegions,topics:kpop?['kpop']:[],editorial_priority:entertainmentPriority(plainText(r.raw_title),evidenceText,editorialFocus),
+        date,published_at:publishedAt,collected_at:r.created_at||null,date_basis:publishedAt?'published':'ingested',
         summary: summary || '原文内容分析中...',
         ai_assisted: !!r.ai_summary || !!r.translated_title,
         content_kind: 'rss_excerpt',
         originalTitle:plainText(r.raw_title),excerpt:evidenceText,event:readEvent(primary?.event),
-        sources:mergeSourceLinks([{url:articleUrl,title:r.raw_title,source:r.source_site,published_at:primary?.published_at||null},...linkedSources,...(eventSourceMap.get(readEvent(primary?.event)?.id||'')||[]).filter(s=>!s.published_at||Math.abs(Date.parse(s.published_at)-Date.parse(date))<=72*3600000)]),
+        sources:mergeSourceLinks([{url:articleUrl,title:r.raw_title,source:r.source_site,published_at:primary?.published_at||null,coverage_kind:readEvent(primary?.event)?.coverageKind},...linkedSources,...(eventSourceMap.get(readEvent(primary?.event)?.id||'')||[]).filter(s=>!s.published_at||Math.abs(Date.parse(s.published_at)-Date.parse(date))<=72*3600000)]),
         intelligence: assessment,
         hasReport: !!r.deep_report && isFeatured(assessment),
         relevance: assessed ? {
@@ -261,7 +273,8 @@ export async function GET(request: Request) {
     let finalRecords = eventRecords;
     if (categoryParam) {
       const category = normalizeCategory(categoryParam);
-      finalRecords = finalRecords.filter(r => r.category === category);
+      finalRecords = finalRecords.filter(r => r.category === category||(category==='entertainment'&&r.topics?.includes('kpop')));
+      if(category==='entertainment')finalRecords.sort((a,b)=>(b.editorial_priority||0)-(a.editorial_priority||0)||String(b.date).localeCompare(String(a.date)));
     }
     if (regionParam) {
       const region = Object.keys(REGION_RULES).includes(regionParam) ? regionParam : getValidRegionIds(regionParam, '')[0];
@@ -281,30 +294,31 @@ export async function GET(request: Request) {
       assessed: finalRecords.filter(r => r.relevance !== null).length,
       reports: finalRecords.filter(r => r.hasReport).length
     };
-    const requestedPage=Number(url.searchParams.get('page')||1);
-    const page=Number.isInteger(requestedPage)&&requestedPage>0?requestedPage:1;
-    const pageSize=30;
     const publicRecord=(r:any)=>{const {excerpt,originalTitle,event,search_text,...rest}=r;return rest;};
-    const pageItems=finalRecords.slice((page-1)*pageSize,page*pageSize).map(publicRecord);
+    const pagination=paginate(finalRecords,url.searchParams.get('page')||1);
+    const pageItems=pagination.items.map(publicRecord);
+    const {page,page_size,total_pages,has_more}=pagination;
     const payload = {
       news: pageItems,
       hot: rankedRecords.slice(0,5).map(publicRecord),
       items: pageItems,
+      ...(url.searchParams.get('browse')==='1'?{browse_items:finalRecords.map(publicRecord)}:{}),
       events: [],
       counts: stats,
       thresholds: THRESHOLDS,
       selection_version: SELECTION_VERSION,
-      clustering:{version:CLUSTER_VERSION,unprocessed_articles:windowRecords.filter(r=>!r.event?.checked).length,articles:windowRecords.length,events:eventRecords.length,merged:windowRecords.length-eventRecords.length},
+      clustering:{version:CLUSTER_VERSION,unprocessed_articles:windowRecords.filter(r=>(!r.event?.checked||r.event.version!==CLUSTER_VERSION)).length,articles:windowRecords.length,events:eventRecords.length,merged:windowRecords.length-eventRecords.length},
       pending_assessment: pendingAssessment,
       read_window: rawRecords.length,
-      coverage:{pending:pendingAssessment,needs_reassessment:needsReassessment,below_importance:belowImportance,sports_excluded:sportsExcluded,categories:Object.fromEntries(Object.keys(CATEGORY_LABELS).map(id=>[id,eventRecords.filter(r=>r.category===id).length]))},
+      coverage:{pending:pendingAssessment,needs_reassessment:needsReassessment,below_importance:belowImportance,sports_excluded:sportsExcluded,categories:Object.fromEntries(Object.keys(CATEGORY_LABELS).map(id=>[id,eventRecords.filter(r=>r.category===id||(id==='entertainment'&&r.topics?.includes('kpop'))).length]))},
       regions: regionCounts,
       total: finalRecords.length,
-      page,
-      hasMore: page*pageSize<finalRecords.length,
-      has_more: page*pageSize<finalRecords.length
+      page,page_size,total_pages,
+      history:{default_days:7,read_limit:2000,scope:'recent_records',display_window:days||'all_in_read_window'},
+      hasMore:has_more,has_more
     };
-    return Response.json({...payload, data: payload, result: payload, success: true}, {headers: {'Cache-Control': 'no-store'}});
+    const {browse_items,...compatPayload}=payload as typeof payload & {browse_items?:any[]};
+    return Response.json({...payload, data:compatPayload, result:compatPayload, success: true}, {headers: {'Cache-Control': 'no-store'}});
   } catch (error: any) {
     console.error('Public news request failed:', error?.name || 'Error');
     return Response.json({...safeFallback,data:safeFallback,result:safeFallback,success:false,error:'NEWS_FETCH_FAILED'}, {status:502,headers:{'Cache-Control':'no-store'}});
